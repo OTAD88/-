@@ -1,4 +1,4 @@
-import { NativeModule, requireOptionalNativeModule } from "expo-modules-core";
+import { requireOptionalNativeModule, type NativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 
 export type JesrMode = "balanced" | "battery";
