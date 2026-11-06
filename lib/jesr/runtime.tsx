@@ -59,7 +59,7 @@ function useNativeApi(): ChatApi {
         await setJesrId(profile.jesrId).catch(() => {});
         unsub = e.subscribe(() => setTick((t) => t + 1));
         off.push(bindMeshToEngine({ sendData: sendJesrData, onData: addJesrDataListener }, (env) => e.onEnvelope(env)));
-        off.push(addMeshListener("onMeshState", (s) => { setSnap({ active: s.active, peers: s.peers }); if (s.peers.some((p) => p.connected)) void e.flush(); }));
+        off.push(addMeshListener<JesrSnapshot>("onMeshState", (s) => { setSnap({ active: s.active, peers: s.peers }); if (s.peers.some((p) => p.connected)) void e.flush(); }));
         timer = setInterval(() => void e.flush(), 5000);   // backoff is enforced inside the engine
         setEngine(e);
       } catch (err: any) { setError(String(err?.message ?? err)); }
