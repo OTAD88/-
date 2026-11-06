@@ -41,7 +41,7 @@ type JesrNativeModule = {
 };
 
 const native = Platform.OS === "android" ? requireOptionalNativeModule<JesrNativeModule>("JesrNetwork") : null;
-const emitter = native ? new EventEmitter(native) : null;
+const emitter = native ? new EventEmitter(native as any) : null;
 export const isJesrNativeAvailable = !!native;
 
 function requireNative(): JesrNativeModule {
