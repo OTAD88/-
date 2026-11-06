@@ -6,14 +6,13 @@ plugins {
 group = 'com.jesr.network'
 version = '1.0.0'
 
+expoModule {
+  canBePublished false
+}
+
 android {
   namespace 'com.jesr.network'
   defaultConfig { minSdkVersion 24 }
-  publishing {
-    singleVariant("release") {
-      withSourcesJar()
-    }
-  }
 }
 
 dependencies {
