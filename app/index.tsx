@@ -255,7 +255,7 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isJesrNativeAvailable || autoStarted.current) return;
+    if (!isJesrNativeAvailable || !api.ready || autoStarted.current) return;
     autoStarted.current = true;
     let alive = true;
     const begin = async () => {
@@ -271,7 +271,7 @@ export default function HomeScreen() {
     };
     void begin();
     return () => { alive = false; };
-  }, []);
+  }, [api.ready]);
 
   const stylesColor = colors;
   const isChat = peer !== null;
