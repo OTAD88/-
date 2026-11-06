@@ -78,5 +78,10 @@
     "tsx": "^4.21.0",
     "typescript": "~6.0.3",
     "vitest": "^2.1.9"
+  },
+  "expo": {
+    "autolinking": {
+      "nativeModulesDir": "./modules"
+    }
   }
 }
