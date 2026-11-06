@@ -1,0 +1,17 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.jesr.network'
+version = '1.0.0'
+
+android {
+  namespace 'com.jesr.network'
+  defaultConfig { minSdkVersion 24 }
+}
+
+dependencies {
+  implementation 'com.goterl:lazysodium-android:5.1.0@aar'
+  implementation 'net.java.dev.jna:jna:5.14.0@aar'
+}
