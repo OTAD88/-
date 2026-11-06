@@ -386,14 +386,7 @@ export default function HomeScreen() {
                 <Text style={[styles.statusText, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>{networkLabel}</Text>
               </View>
             </View>
-            {tab === "chats" ? (
-              <View style={styles.headerTitleRow}>
-                <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>المحادثات</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={[styles.addButton, { borderColor: luminance(stylesColor.top) < 0.45 ? "rgba(255,255,255,0.8)" : "rgba(33,37,41,0.65)" }]}>
-                  <Text style={[styles.addButtonText, { color: stylesColor.primaryText }]}>+</Text>
-                </Pressable>
-              </View>
-            ) : <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>حسابي</Text>}
+            <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>المحادثات</Text>
           </View>
 
           <View style={[styles.sheet, { backgroundColor: stylesColor.surface }]}>
@@ -487,13 +480,8 @@ export default function HomeScreen() {
             )}
           </View>
           <View style={[styles.bottomNav, { backgroundColor: stylesColor.surface, borderTopColor: stylesColor.border }]}>
-            <Pressable onPress={() => setTab("chats")} style={styles.navItem}>
-              <Text style={[styles.navGlyph, { color: tab === "chats" ? stylesColor.primary : stylesColor.muted }]}>▤</Text>
-              <Text style={[styles.navLabel, { color: tab === "chats" ? stylesColor.primary : stylesColor.muted }]}>المحادثات</Text>
-            </Pressable>
-            <Pressable onPress={() => setTab("profile")} style={styles.navItem}>
-              <Text style={[styles.navGlyph, { color: tab === "profile" ? stylesColor.primary : stylesColor.muted }]}>◉</Text>
-              <Text style={[styles.navLabel, { color: tab === "profile" ? stylesColor.primary : stylesColor.muted }]}>حسابي</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={[styles.bottomAddButton, { backgroundColor: stylesColor.primary }]}>
+              <Text style={[styles.bottomAddGlyph, { color: stylesColor.primaryText }]}>+</Text>
             </Pressable>
           </View>
         </>
@@ -634,10 +622,9 @@ const styles = StyleSheet.create({
   nearbyRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
   nearbyAction: { fontSize: 12, fontWeight: "700" },
   networkError: { fontSize: 11, textAlign: "right", marginTop: 7 },
-  bottomNav: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-around", alignItems: "center" },
-  navItem: { minWidth: 96, alignItems: "center", gap: 2, paddingVertical: 5 },
-  navGlyph: { fontSize: 22 },
-  navLabel: { fontSize: 10, fontWeight: "600" },
+  bottomNav: { minHeight: 68, borderTopWidth: StyleSheet.hairlineWidth, alignItems: "center", justifyContent: "center", paddingVertical: 7 },
+  bottomAddButton: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center", elevation: 4 },
+  bottomAddGlyph: { fontSize: 34, lineHeight: 39, fontWeight: "300" },
   profileContent: { gap: 14, paddingBottom: 20 },
   profileCard: { padding: 16, borderRadius: 20, borderWidth: 1, gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "800", textAlign: "right" },
