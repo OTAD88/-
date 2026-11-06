@@ -30,6 +30,7 @@ type JesrEvents = {
   onJesrData: (event: { envelope: string }) => void;
 };
 type JesrNativeModule = NativeModule<JesrEvents> & {
+  addListener<K extends keyof JesrEvents>(eventName: K, listener: JesrEvents[K]): { remove(): void };
   getSnapshot(): Promise<JesrSnapshot>;
   getNativeDiagnosticReport(): Promise<string>;
   startNetwork(mode: JesrMode): Promise<JesrSnapshot>;
@@ -72,5 +73,5 @@ export function addMeshListener<T = any>(event: "onMeshState" | "onMeshLog" | "o
   return native?.addListener(event, listener as any) ?? { remove() {} };
 }
 export function addJesrDataListener(listener: (envelope: string) => void) {
-  return native?.addListener("onJesrData", (event) => listener(event.envelope)) ?? { remove() {} };
+  return native?.addListener("onJesrData", (event: { envelope: string }) => listener(event.envelope)) ?? { remove() {} };
 }
