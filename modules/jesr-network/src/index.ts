@@ -1,4 +1,4 @@
-import { EventEmitter, requireOptionalNativeModule } from "expo-modules-core";
+import { NativeModule, requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 
 export type JesrMode = "balanced" | "battery";
@@ -22,7 +22,14 @@ export type JesrSnapshot = {
   batteryMode: JesrMode; peers: JesrPeer[]; routes: JesrRoute[];
   pendingPackets: number; events: JesrLogEvent[];
 };
-type JesrNativeModule = {
+type JesrEvents = {
+  onMeshState: (snapshot: JesrSnapshot) => void;
+  onMeshLog: (event: JesrLogEvent) => void;
+  onPeerDiscovered: (peer: JesrPeer) => void;
+  onPingResult: (event: JesrLogEvent) => void;
+  onJesrData: (event: { envelope: string }) => void;
+};
+type JesrNativeModule = NativeModule<JesrEvents> & {
   getSnapshot(): Promise<JesrSnapshot>;
   getNativeDiagnosticReport(): Promise<string>;
   startNetwork(mode: JesrMode): Promise<JesrSnapshot>;
@@ -41,7 +48,7 @@ type JesrNativeModule = {
 };
 
 const native = Platform.OS === "android" ? requireOptionalNativeModule<JesrNativeModule>("JesrNetwork") : null;
-const emitter = native ? new EventEmitter(native as any) : null;
+
 export const isJesrNativeAvailable = !!native;
 
 function requireNative(): JesrNativeModule {
@@ -62,8 +69,8 @@ export const setJesrId = (id: string) => requireNative().setJesrId(id);
 export const sendJesrData = (target: string, envelope: string) => requireNative().sendData(target, envelope);
 export const getNativeDiagnosticReport = () => native ? native.getNativeDiagnosticReport() : Promise.resolve("");
 export function addMeshListener<T = any>(event: "onMeshState" | "onMeshLog" | "onPeerDiscovered" | "onPingResult", listener: (value: T) => void) {
-  return emitter?.addListener(event, listener) ?? { remove() {} };
+  return native?.addListener(event, listener as any) ?? { remove() {} };
 }
 export function addJesrDataListener(listener: (envelope: string) => void) {
-  return emitter?.addListener("onJesrData", (event: { envelope: string }) => listener(event.envelope)) ?? { remove() {} };
+  return native?.addListener("onJesrData", (event) => listener(event.envelope)) ?? { remove() {} };
 }
