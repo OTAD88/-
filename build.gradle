@@ -1,0 +1,20 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.jesr.network'
+version = '1.0.0'
+
+android {
+  namespace 'com.jesr.network'
+  defaultConfig {
+    versionName '1.0.0'
+  }
+}
+
+dependencies {
+  // libsodium (Ed25519, X25519, XChaCha20-Poly1305): vetted primitives; Jesr implements none itself.
+  implementation 'com.goterl:lazysodium-android:5.1.0@aar'
+  implementation 'net.java.dev.jna:jna:5.14.0@aar'
+}
