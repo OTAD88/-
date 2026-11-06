@@ -24,10 +24,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useJesr } from "@/lib/jesr/runtime";
 import { MAX_TEXT_CHARS } from "@/lib/jesr/engine";
 import {
+  addMeshListener,
   discoverMeshPeers,
   getMeshSnapshot,
   isJesrNativeAvailable,
   startMesh,
+  type JesrPeer,
+  type JesrSnapshot,
 } from "@/modules/jesr-network/src";
 
 type ThemeMode = "auto" | "light" | "dark" | "custom";
@@ -191,6 +194,8 @@ export default function HomeScreen() {
   const [query, setQuery] = useState("");
   const [message, setMessage] = useState("");
   const [friendId, setFriendId] = useState("");
+  const [friendMethod, setFriendMethod] = useState<"id" | "nearby">("id");
+  const [nearbyPeers, setNearbyPeers] = useState<JesrPeer[]>([]);
   const [name, setName] = useState("مستخدم جسر");
   const [addOpen, setAddOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
@@ -239,6 +244,17 @@ export default function HomeScreen() {
   }, [api.profile.name]);
 
   useEffect(() => {
+    if (!isJesrNativeAvailable) return;
+    let alive = true;
+    const stateSub = addMeshListener<JesrSnapshot>("onMeshState", (snapshot) => setNearbyPeers(snapshot.peers));
+    const peerSub = addMeshListener<JesrPeer>("onPeerDiscovered", (newPeer) => {
+      setNearbyPeers((items) => [...items.filter((item) => item.id !== newPeer.id), newPeer]);
+    });
+    void getMeshSnapshot().then((snapshot) => { if (alive) setNearbyPeers(snapshot.peers); }).catch(() => {});
+    return () => { alive = false; stateSub.remove(); peerSub.remove(); };
+  }, []);
+
+  useEffect(() => {
     if (!isJesrNativeAvailable || autoStarted.current) return;
     autoStarted.current = true;
     let alive = true;
@@ -269,13 +285,17 @@ export default function HomeScreen() {
     [api.conversations, query],
   );
 
-  async function submitFriend() {
-    const id = friendId.trim();
+  async function submitFriendById(idValue: string) {
+    const id = idValue.trim();
     if (!id) { Alert.alert("إضافة صديق", "أدخل معرّف جسر الخاص بصديقك."); return; }
     if (!api.ready) { Alert.alert("جسر", "المحرك لم يجهز بعد."); return; }
     const result = await api.addFriend(id);
     if (result) Alert.alert("تعذرت الإضافة", result);
     else { setFriendId(""); setAddOpen(false); Alert.alert("طلب الصداقة", "أُرسل الطلب. سيظهر عند وصوله إلى الجهاز الآخر."); }
+  }
+
+  async function submitFriend() {
+    await submitFriendById(friendId);
   }
 
   async function sendMessage() {
@@ -368,8 +388,8 @@ export default function HomeScreen() {
             </View>
             {tab === "chats" ? (
               <View style={styles.headerTitleRow}>
-                <Text style={styles.headerTitle}>المحادثات</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={styles.addButton}>
+                <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>المحادثات</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={[styles.addButton, { borderColor: luminance(stylesColor.top) < 0.45 ? "rgba(255,255,255,0.8)" : "rgba(33,37,41,0.65)" }]}>
                   <Text style={[styles.addButtonText, { color: stylesColor.primaryText }]}>+</Text>
                 </Pressable>
               </View>
@@ -483,13 +503,42 @@ export default function HomeScreen() {
         <View style={styles.backdrop}>
           <View style={[styles.sheetModal, { backgroundColor: stylesColor.surface }]}>
             <Text style={[styles.modalTitle, { color: stylesColor.text }]}>إضافة صديق</Text>
-            <Text style={[styles.modalHint, { color: stylesColor.muted }]}>أدخل معرّف جسر الذي يظهر في حساب صديقك. يجب أن يكون الجهازان قريبين ومتصليْن بالشبكة المحلية لإتمام الطلب.</Text>
-            <TextInput value={friendId} onChangeText={setFriendId} placeholder="JESR-XXXX-XXXX" placeholderTextColor={stylesColor.muted} autoCapitalize="characters" autoCorrect={false} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} />
-            <Pressable onPress={() => void submitFriend()} disabled={!api.ready} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
-              <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>إرسال طلب الصداقة</Text>
-            </Pressable>
+            <Text style={[styles.modalHint, { color: stylesColor.muted }]}>اختر طريقة الإضافة المتاحة حاليًا. اكتشاف الأجهزة القريبة يعمل تلقائيًا في الخلفية.</Text>
+            <View style={styles.methodRow}>
+              <Pressable onPress={() => setFriendMethod("id")} style={[styles.methodChip, { backgroundColor: friendMethod === "id" ? stylesColor.primary : stylesColor.subtle }]}>
+                <Text style={{ color: friendMethod === "id" ? stylesColor.primaryText : stylesColor.text }}>بالمعرّف</Text>
+              </Pressable>
+              <Pressable onPress={() => setFriendMethod("nearby")} style={[styles.methodChip, { backgroundColor: friendMethod === "nearby" ? stylesColor.primary : stylesColor.subtle }]}>
+                <Text style={{ color: friendMethod === "nearby" ? stylesColor.primaryText : stylesColor.text }}>الأجهزة القريبة</Text>
+              </Pressable>
+            </View>
+            {friendMethod === "id" ? (
+              <>
+                <TextInput value={friendId} onChangeText={setFriendId} placeholder="JESR-XXXX-XXXX" placeholderTextColor={stylesColor.muted} autoCapitalize="characters" autoCorrect={false} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} />
+                <Pressable onPress={() => void submitFriend()} disabled={!api.ready} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
+                  <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>إرسال طلب الصداقة</Text>
+                </Pressable>
+              </>
+            ) : (
+              <FlatList
+                data={nearbyPeers}
+                keyExtractor={(item) => item.id}
+                style={{ maxHeight: 240 }}
+                ListEmptyComponent={<Text style={[styles.modalHint, { color: stylesColor.muted }]}>لا توجد أجهزة مكتشفة حاليًا. يواصل جسر البحث تلقائيًا.</Text>}
+                renderItem={({ item }) => (
+                  <Pressable onPress={() => void submitFriendById(item.id)} style={[styles.nearbyRow, { borderBottomColor: stylesColor.border }]}>
+                    <View style={[styles.avatar, { backgroundColor: stylesColor.primary }]}><Text style={[styles.avatarLetter, { color: stylesColor.primaryText }]}>ج</Text></View>
+                    <View style={styles.flex}>
+                      <Text style={[styles.contactName, { color: stylesColor.text }]}>{item.id}</Text>
+                      <Text style={[styles.preview, { color: stylesColor.muted }]}>{item.connected ? "متصل" : "تم اكتشافه"}</Text>
+                    </View>
+                    <Text style={[styles.nearbyAction, { color: stylesColor.primary }]}>إضافة</Text>
+                  </Pressable>
+                )}
+              />
+            )}
             <Pressable onPress={() => setAddOpen(false)} style={[styles.secondaryWide, { borderColor: stylesColor.border }]}>
-              <Text style={{ color: stylesColor.text }}>إلغاء</Text>
+              <Text style={{ color: stylesColor.text }}>إغلاق</Text>
             </Pressable>
           </View>
         </View>
@@ -580,6 +629,10 @@ const styles = StyleSheet.create({
   unread: { minWidth: 19, height: 19, lineHeight: 19, textAlign: "center", borderRadius: 10, fontSize: 10, overflow: "hidden" },
   requestActions: { flexDirection: "row-reverse", gap: 5 },
   miniAction: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 },
+  methodRow: { flexDirection: "row-reverse", gap: 8 },
+  methodChip: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 13 },
+  nearbyRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  nearbyAction: { fontSize: 12, fontWeight: "700" },
   networkError: { fontSize: 11, textAlign: "right", marginTop: 7 },
   bottomNav: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-around", alignItems: "center" },
   navItem: { minWidth: 96, alignItems: "center", gap: 2, paddingVertical: 5 },
