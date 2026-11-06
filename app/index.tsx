@@ -358,8 +358,8 @@ export default function HomeScreen() {
           <View style={[styles.mainHeader, { backgroundColor: stylesColor.top }]}>
             <View style={styles.headerMainRow}>
               <View>
-                <Text style={styles.brand}>جسر</Text>
-                <Text style={styles.brandSub}>مراسلة محلية بلا إنترنت</Text>
+                <Text style={[styles.brand, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>جسر</Text>
+                <Text style={[styles.brandSub, { color: luminance(stylesColor.top) < 0.45 ? "#E5EAE4" : "#303A33" }]}>مراسلة محلية بلا إنترنت</Text>
               </View>
               <View style={styles.statusWrap}>
                 <View style={[styles.statusDot, { backgroundColor: networkColor }]} />
@@ -476,11 +476,6 @@ export default function HomeScreen() {
               <Text style={[styles.navLabel, { color: tab === "profile" ? stylesColor.primary : stylesColor.muted }]}>حسابي</Text>
             </Pressable>
           </View>
-          {tab === "chats" && (
-            <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={[styles.fab, { backgroundColor: stylesColor.primary }]}>
-              <Text style={[styles.fabText, { color: stylesColor.primaryText }]}>+</Text>
-            </Pressable>
-          )}
         </>
       )}
 
@@ -590,8 +585,6 @@ const styles = StyleSheet.create({
   navItem: { minWidth: 96, alignItems: "center", gap: 2, paddingVertical: 5 },
   navGlyph: { fontSize: 22 },
   navLabel: { fontSize: 10, fontWeight: "600" },
-  fab: { position: "absolute", right: 20, bottom: 82, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", elevation: 6 },
-  fabText: { fontSize: 33, lineHeight: 37, fontWeight: "300" },
   profileContent: { gap: 14, paddingBottom: 20 },
   profileCard: { padding: 16, borderRadius: 20, borderWidth: 1, gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "800", textAlign: "right" },
