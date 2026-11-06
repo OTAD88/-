@@ -5,6 +5,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Platform } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 import { JesrProvider } from "@/lib/jesr/runtime";
+import { ThemeProvider } from "@/lib/theme-provider";
 
 export default function TabLayout() {
   const colors = useColors();
@@ -13,6 +14,7 @@ export default function TabLayout() {
   const tabBarHeight = 56 + bottomPadding;
 
   return (
+    <ThemeProvider>
     <JesrProvider>
     <Tabs
       screenOptions={{
@@ -46,5 +48,6 @@ export default function TabLayout() {
       />
     </Tabs>
     </JesrProvider>
+    </ThemeProvider>
   );
 }
