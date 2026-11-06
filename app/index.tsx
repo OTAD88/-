@@ -1,646 +1,636 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  AppState,
+  Alert,
+  FlatList,
+  KeyboardAvoidingView,
   Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
   ScrollView,
+  Share,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   View,
-  useWindowDimensions,
+  useColorScheme,
   type Permission,
 } from "react-native";
-import { Image } from "expo-image";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { exportDiagnosticReport, getDiagnosticReport, recordDiagnostic, recordDiagnosticError } from "@/lib/diagnostics";
-import { ScreenContainer } from "@/components/screen-container";
-import { NetworkTopology, type TopologyNode } from "@/components/mesh/topology";
+import Svg, { Circle, Path } from "react-native-svg";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useJesr } from "@/lib/jesr/runtime";
+import { MAX_TEXT_CHARS } from "@/lib/jesr/engine";
 import {
-  addMeshListener,
-  connectMeshPeer,
   discoverMeshPeers,
   getMeshSnapshot,
   isJesrNativeAvailable,
-  sendMeshPing,
   startMesh,
-  stopMesh,
-  type JesrLogEvent,
-  type JesrMode,
-  type JesrPeer,
-  type JesrSnapshot,
 } from "@/modules/jesr-network/src";
 
-const palette = {
-  background: "#0D1722",
-  panel: "#142330",
-  panelRaised: "#192B38",
-  line: "#2A3D49",
-  text: "#EAF1F4",
-  muted: "#9AAAB3",
-  teal: "#20C7B4",
-  amber: "#E6AA5A",
-  red: "#E57676",
-  blue: "#76B7D8",
+type ThemeMode = "auto" | "light" | "dark" | "custom";
+type SavedColor = { id: string; name: string; hex: string };
+type Palette = {
+  page: string; top: string; surface: string; surfaceAlt: string; primary: string;
+  primaryText: string; text: string; muted: string; border: string; subtle: string;
+  chat: string; bubbleIn: string; bubbleOut: string; bubbleText: string; input: string;
 };
+const ORIGINAL = "#5B6654";
+const THEME_MODE_KEY = "jesr_theme_mode";
+const ACCENT_KEY = "jesr_accent_color";
+const SAVED_COLORS_KEY = "jesr_saved_colors";
+const ORIGINAL_COLOR: SavedColor = { id: "original", name: "الأصلي", hex: ORIGINAL };
 
-const emptySnapshot: JesrSnapshot = {
-  available: false,
-  active: false,
-  localId: "غير متاح",
-  transportState: "يتطلب بناء Android أصلي",
-  batteryMode: "balanced",
-  peers: [],
-  routes: [],
-  pendingPackets: 0,
-  events: [],
-};
-
-function shortId(id: string) {
-  return id.length > 13 ? `${id.slice(0, 6)}…${id.slice(-4)}` : id;
+function hexToRgb(hex: string) {
+  const raw = hex.replace("#", "");
+  const value = raw.length === 3 ? raw.split("").map((x) => x + x).join("") : raw;
+  const number = parseInt(value, 16);
+  return { r: (number >> 16) & 255, g: (number >> 8) & 255, b: number & 255 };
 }
-
-function formatTime(at: number) {
-  if (!at) return "—";
-  return new Date(at).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function rgbToHex(r: number, g: number, b: number) {
+  return "#" + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0")).join("").toUpperCase();
 }
-
-function eventColor(kind: string) {
-  if (kind.includes("failed") || kind.includes("error") || kind.includes("lost")) return palette.red;
-  if (kind.includes("ack") || kind.includes("delivered")) return palette.teal;
-  if (kind.includes("route") || kind.includes("forwarded")) return palette.amber;
-  return palette.blue;
+function mix(a: string, b: string, amount: number) {
+  const x = hexToRgb(a); const y = hexToRgb(b);
+  return rgbToHex(x.r * (1 - amount) + y.r * amount, x.g * (1 - amount) + y.g * amount, x.b * (1 - amount) + y.b * amount);
 }
-
-export default function HomeScreen() {
-  const { width: viewportWidth } = useWindowDimensions();
-  const [snapshot, setSnapshot] = useState<JesrSnapshot>(emptySnapshot);
-  const [mode, setMode] = useState<JesrMode>("balanced");
-  const [targetId, setTargetId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [liveEvents, setLiveEvents] = useState<JesrLogEvent[]>([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [displayName, setDisplayName] = useState("مستخدم جسر");
-  const [distanceConsent, setDistanceConsent] = useState(false);
-  const [diagnosticOpen, setDiagnosticOpen] = useState(false);
-  const [diagnosticReport, setDiagnosticReport] = useState("لا يوجد تقرير تشخيص محفوظ بعد.");
-
-  const refresh = useCallback(async () => {
-    try {
-      const next = await getMeshSnapshot();
-      setSnapshot(next);
-      setMode(next.batteryMode);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "تعذر قراءة حالة الشبكة");
+function luminance(hex: string) {
+  const c = hexToRgb(hex);
+  const channel = (v: number) => { const x = v / 255; return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); };
+  return 0.2126 * channel(c.r) + 0.7152 * channel(c.g) + 0.0722 * channel(c.b);
+}
+function hslToHex(h: number, s: number, l: number) {
+  const sat = s / 100; const light = l / 100;
+  const c = (1 - Math.abs(2 * light - 1)) * sat;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = light - c / 2;
+  let r = 0; let g = 0; let b = 0;
+  if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; }
+  else if (h < 180) { g = c; b = x; } else if (h < 240) { g = x; b = c; }
+  else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+  return rgbToHex((r + m) * 255, (g + m) * 255, (b + m) * 255);
+}
+function getHue(hex: string) {
+  const { r: rr, g: gg, b: bb } = hexToRgb(hex);
+  const r = rr / 255; const g = gg / 255; const b = bb / 255;
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b); const delta = max - min;
+  if (delta === 0) return 0;
+  let h = 0;
+  if (max === r) h = 60 * (((g - b) / delta) % 6);
+  else if (max === g) h = 60 * ((b - r) / delta + 2);
+  else h = 60 * ((r - g) / delta + 4);
+  return (h + 360) % 360;
+}
+function makePalette(mode: ThemeMode, accent: string, systemDark: boolean): Palette {
+  const dark = mode === "dark" || (mode === "auto" && systemDark) || (mode === "custom" && luminance(accent) < 0.24);
+  if (mode === "custom") {
+    const onAccent = luminance(accent) < 0.42 ? "#FFFFFF" : "#212529";
+    if (dark) {
+      const background = mix(accent, "#212529", 0.88);
+      return {
+        page: background, top: accent, surface: mix(accent, "#212529", 0.68),
+        surfaceAlt: mix(accent, "#212529", 0.54), primary: accent, primaryText: onAccent,
+        text: "#FFFFFF", muted: mix(accent, "#D0D7DC", 0.58), border: mix(accent, "#D0D7DC", 0.2),
+        subtle: mix(accent, "#212529", 0.38), chat: background,
+        bubbleIn: mix(accent, "#212529", 0.58), bubbleOut: mix(accent, "#212529", 0.32),
+        bubbleText: "#FFFFFF", input: mix(accent, "#212529", 0.42),
+      };
     }
-  }, []);
-
-  useEffect(() => {
-    void AsyncStorage.getItem("jesr_display_name").then((saved) => { if (saved) setDisplayName(saved); });
-    void getDiagnosticReport().then((report) => { setDiagnosticReport(report); if (/exception|failed|error/i.test(report)) setDiagnosticOpen(true); });
-    const initialRefresh = setTimeout(() => { void refresh(); }, 0);
-    const stateSub = addMeshListener("onMeshState", (state) => {
-      setSnapshot(state);
-      setMode(state.batteryMode);
-    });
-    const logSub = addMeshListener("onMeshLog", (event) => {
-      setLiveEvents((previous) => [event, ...previous].slice(0, 24));
-      recordDiagnostic("native_event", event.kind);
-    });
-    const peerSub = addMeshListener("onPeerDiscovered", (peer) => {
-      setSnapshot((current) => ({
-        ...current,
-        peers: [...current.peers.filter((item) => item.id !== peer.id), peer],
-      }));
-    });
-    const appSub = AppState.addEventListener("change", (state) => {
-      if (state === "active") void refresh();
-    });
-    return () => {
-      clearTimeout(initialRefresh);
-      stateSub.remove();
-      logSub.remove();
-      peerSub.remove();
-      appSub.remove();
+    return {
+      page: mix(accent, "#FFFFFF", 0.82), top: accent, surface: "#FFFFFF",
+      surfaceAlt: mix(accent, "#FFFFFF", 0.9), primary: accent, primaryText: onAccent,
+      text: "#212529", muted: mix(accent, "#212529", 0.42), border: mix(accent, "#A3ADB2", 0.55),
+      subtle: mix(accent, "#FFFFFF", 0.72), chat: accent,
+      bubbleIn: "#FFFFFF", bubbleOut: mix(accent, "#FFFFFF", 0.73),
+      bubbleText: "#212529", input: mix(accent, "#FFFFFF", 0.76),
     };
-  }, [refresh]);
-
-  const topologyNodes = useMemo<TopologyNode[]>(() => {
-    const byId = new Map<string, TopologyNode>();
-    for (const peer of snapshot.peers) {
-      if (!peer.connected) continue;
-      byId.set(peer.id, {
-        id: peer.id,
-        direct: peer.connected,
-        linkType: peer.transport,
-        hops: peer.connected ? 1 : undefined,
-      });
-    }
-    for (const route of snapshot.routes) {
-      if (!byId.has(route.destinationId)) {
-        byId.set(route.destinationId, { id: route.destinationId, direct: false, hops: route.hops });
-      }
-    }
-    return [...byId.values()];
-  }, [snapshot.peers, snapshot.routes]);
-
-  const allEvents = useMemo(() => {
-    const merged = [...liveEvents, ...snapshot.events];
-    const seen = new Set<string>();
-    return merged.filter((event) => {
-      if (seen.has(event.id)) return false;
-      seen.add(event.id);
-      return true;
-    }).slice(0, 18);
-  }, [liveEvents, snapshot.events]);
-
-  async function requestAndroidPermissions() {
-    if (Platform.OS !== "android") return;
-    const api = Platform.Version as number;
-    const permissions: Permission[] = [];
-    if (api >= 31) {
-      permissions.push(
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
-        PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-      );
-    }
-    if (api >= 33) permissions.push(PermissionsAndroid.PERMISSIONS.NEARBY_WIFI_DEVICES);
-    else permissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
-    const notificationPermission = api >= 33 ? PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS : null;
-    const result = await PermissionsAndroid.requestMultiple(permissions);
-    const denied = permissions.filter((permission) => result[permission] !== PermissionsAndroid.RESULTS.GRANTED);
-    if (denied.length) throw new Error("لم تُمنح بعض أذونات الأجهزة القريبة. لا يجمع التطبيق موقعك؛ تستخدم الإصدارات القديمة إذن الموقع لمسح BLE/Wi‑Fi فقط.");
-    if (notificationPermission) {
-      const notificationResult = await PermissionsAndroid.request(notificationPermission);
-      if (notificationResult !== PermissionsAndroid.RESULTS.GRANTED) {
-        setNotice("لم تسمح بإشعارات Android؛ قد يعرض النظام نشاط الخدمة في مدير المهام بدل لوحة الإشعارات.");
-      }
-    }
   }
-
-  async function runAction(action: () => Promise<unknown>, success?: string) {
-    setBusy(true);
-    setNotice(null);
-    try {
-      await action();
-      if (success) setNotice(success);
-      await refresh();
-    } catch (error) {
-      recordDiagnosticError("ui_action_failed", error);
-      setNotice(error instanceof Error ? error.message : "تعذر تنفيذ العملية");
-    } finally {
-      setBusy(false);
-    }
+  if (dark) {
+    return {
+      page: "#212529", top: "#212529", surface: "#2B3136", surfaceAlt: "#343B40",
+      primary: "#8FA187", primaryText: "#212529", text: "#FFFFFF", muted: "#D0D7DC",
+      border: "#4B555B", subtle: "#394147", chat: "#212529",
+      bubbleIn: "#343B40", bubbleOut: "#5B6654", bubbleText: "#FFFFFF", input: "#394147",
+    };
   }
-
-  async function handleStart() {
-    recordDiagnostic("start_network_pressed", `mode=${mode}`);
-    await runAction(async () => {
-      recordDiagnostic("start_network_permissions_begin");
-      await requestAndroidPermissions();
-      recordDiagnostic("start_network_permissions_granted");
-      recordDiagnostic("start_network_native_begin");
-      await startMesh(mode);
-      recordDiagnostic("start_network_native_returned");
-    }, "بدأ تشغيل الشبكة المحلية.");
+  return {
+    page: "#A3ADB2", top: ORIGINAL, surface: "#FFFFFF", surfaceAlt: "#F5F7F6",
+    primary: ORIGINAL, primaryText: "#FFFFFF", text: "#212529", muted: "#5F6B63",
+    border: "#D0D7DC", subtle: "#D0D7DC", chat: ORIGINAL,
+    bubbleIn: "#FFFFFF", bubbleOut: "#D0D7DC", bubbleText: "#212529", input: "#D0D7DC",
+  };
+}
+async function requestNearbyPermissions() {
+  if (Platform.OS !== "android") return;
+  const api = Number(Platform.Version);
+  const permissions: Permission[] = [];
+  if (api >= 31) {
+    permissions.push(
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
+      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+    );
   }
-
-  async function handleDiscover() {
-    recordDiagnostic("discover_nearby_pressed");
-    await runAction(async () => {
-      recordDiagnostic("discover_nearby_native_begin");
-      await discoverMeshPeers();
-      recordDiagnostic("discover_nearby_native_returned");
-    }, "بدأ البحث عن الأجهزة القريبة.");
-  }
-
-  async function handlePing() {
-    const destination = targetId.trim() || snapshot.peers.find((peer) => peer.connected)?.id;
-    if (!destination) {
-      setNotice("أدخل معرّف الجهاز الهدف أو اتصل بجار مباشر أولًا.");
-      return;
-    }
-    await runAction(async () => {
-      const packetId = await sendMeshPing(destination);
-      setNotice(`أُنشئت حزمة التشخيص ${shortId(packetId)}. انتظر تأكيد الوصول في سجل الأحداث.`);
-    });
-  }
-
-  function connectPeer(peer: JesrPeer) {
-    void runAction(() => connectMeshPeer(peer.id), "بدأ طلب الاتصال المحلي.");
-  }
-
-  const connectedPeers = snapshot.peers.filter((peer) => peer.connected);
-  const knownCount = new Set([
-    ...snapshot.peers.map((peer) => peer.id),
-    ...snapshot.routes.map((route) => route.destinationId),
-  ]).size;
-  const directConnectionCount = connectedPeers.length;
-  const active = snapshot.active;
-
-  return (
-    <ScreenContainer edges={["top", "left", "right"]} safeAreaClassName="bg-[#0D1722]">
-      <ScrollView
-        style={styles.page}
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <Pressable accessibilityRole="button" accessibilityLabel="الإعدادات" onPress={() => setSettingsOpen(true)} style={styles.menuButton}>
-            <Text style={styles.menuText}>☰</Text>
-          </Pressable>
-          <View style={styles.brandLine}>
-            <View style={styles.markFrame}>
-              <Image source={require("../icon.png")} style={styles.logo} contentFit="contain" />
-            </View>
-            <View style={styles.headerText}>
-              <Text style={styles.brandName}>جسر</Text>
-              <Text style={styles.brandSub}>شبكة محلية متعددة القفزات</Text>
-            </View>
-          </View>
-          <View style={[styles.statusBadge, { borderColor: active ? "#286A65" : palette.line }]}>
-            <View style={[styles.statusDot, { backgroundColor: active ? palette.teal : palette.muted }]} />
-            <Text style={[styles.statusText, { color: active ? palette.teal : palette.muted }]}>
-              {active ? "الشبكة تعمل" : "الشبكة متوقفة"}
-            </Text>
-          </View>
-        </View>
-
-        {!isJesrNativeAvailable && (
-          <View style={styles.warningBox}>
-            <Text style={styles.warningTitle}>المعاينة لا تملك وصولًا إلى الراديو</Text>
-            <Text style={styles.warningText}>
-              يلزم تثبيت بناء Android أصلي مخصص لتشغيل BLE وWi‑Fi Direct. هذه الشاشة ليست محاكاة لاتصال حي.
-            </Text>
-          </View>
-        )}
-
-        {notice && (
-          <Pressable style={styles.noticeBox} onPress={() => setNotice(null)}>
-            <Text style={styles.noticeText}>{notice}</Text>
-            <Text style={styles.dismiss}>إغلاق</Text>
-          </Pressable>
-        )}
-
-        <View style={styles.identityCard}>
-          <View style={styles.identityHead}>
-          <View>
-              <Text style={styles.eyebrow}>{displayName} · المعرّف الثابت محليًا</Text>
-              <Text selectable numberOfLines={2} style={styles.identityValue}>{snapshot.localId === "غير متاح" ? "تظهر في بناء Android" : snapshot.localId}</Text>
-            </View>
-            <View style={styles.localOnlyPill}><Text style={styles.localOnlyText}>محلي فقط</Text></View>
-          </View>
-          <View style={styles.metricsRow}>
-            <Metric label="جيران مباشرين" value={String(directConnectionCount)} />
-            <Metric label="أجهزة معروفة" value={String(knownCount)} />
-            <Metric label="طابور مؤقت" value={String(snapshot.pendingPackets)} />
-          </View>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>خريطة الشبكة</Text>
-          <Text style={styles.sectionNote}>مباشر ومتعدد القفزات</Text>
-        </View>
-        <View style={styles.topologyCard}>
-          {snapshot.localId !== "غير متاح" ? (
-            <NetworkTopology
-              localId={snapshot.localId}
-              nodes={topologyNodes}
-              routes={snapshot.routes}
-              width={Math.max(260, Math.min(400, viewportWidth - 72))}
-              selectedId={selectedNodeId}
-              onNodePress={(id) => {
-                setSelectedNodeId(id);
-                setTargetId(id);
-                setNotice(`اختير الجهاز ${shortId(id)} كوجهة لاختبار التشخيص.`);
-              }}
-            />
-          ) : (
-            <View style={styles.emptyMap}>
-              <View style={styles.emptyNodeCenter} />
-              <Text style={styles.emptyMapTitle}>بانتظار تشغيل محرك Android</Text>
-              <Text style={styles.emptyMapText}>ستظهر الروابط المباشرة متصلة، والمسارات عبر وسيط بخط متقطع.</Text>
-            </View>
-          )}
-          <View style={styles.legendRow}>
-            <LegendDot color={palette.teal} label="رابط مباشر" />
-            <LegendDot color={palette.amber} label="عبر وسيط" dashed />
-          </View>
-        </View>
-
-        <View style={styles.metricsGrid}>
-          <MetricCard title="مسار مفضّل" value={snapshot.routes[0] ? `${snapshot.routes[0].hops} قفزة` : "لا يوجد"} note={snapshot.routes[0] ? `القفزة التالية ${shortId(snapshot.routes[0].nextHopId)} · حسب المتاح` : "يُكتشف عند اتصال الأجهزة"} color={palette.teal} />
-          <MetricCard title="زمن الاستجابة" value={snapshot.events.find((event) => event.kind === "ping_ack" && event.rttMs != null)?.rttMs != null ? `${snapshot.events.find((event) => event.kind === "ping_ack" && event.rttMs != null)?.rttMs} ms` : "غير مقاس"} note="آخر تأكيد Ping" color={palette.blue} />
-          <MetricCard title="فقد الحزم" value="غير مقاس" note="تتطلب عينات Ping متكررة" color={palette.amber} />
-          <MetricCard title="حالة النقل" value={active ? "نشط" : "متوقف"} note={snapshot.transportState} color={active ? palette.teal : palette.muted} />
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>الأجهزة والمسارات</Text>
-          <Text style={styles.sectionNote}>{snapshot.peers.length} ظاهر</Text>
-        </View>
-        <View style={styles.panel}>
-          {snapshot.peers.length === 0 ? (
-            <EmptyRow title="لا توجد أجهزة بعد" subtitle="ابدأ الشبكة ثم ابحث عن الجوار المحلي." />
-          ) : snapshot.peers.map((peer) => <PeerRow key={peer.id} peer={peer} onConnect={() => connectPeer(peer)} />)}
-          {snapshot.routes.filter((route) => !connectedPeers.some((peer) => peer.id === route.destinationId)).map((route) => (
-            <View key={`route-${route.destinationId}`} style={styles.routeRow}>
-              <View style={styles.relayMark}><Text style={styles.relayMarkText}>{route.hops}</Text></View>
-              <View style={styles.flexOne}>
-                <Text style={styles.peerId}>{shortId(route.destinationId)}</Text>
-                <Text style={styles.mutedText}>عبر {shortId(route.nextHopId)} · {route.hops} قفزات · آخر تحديث {formatTime(route.lastUpdatedAt)}</Text>
-              </View>
-              <Text style={styles.routeLabel}>مسار معروف</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>اختبار التشخيص</Text>
-          <Text style={styles.sectionNote}>حزم صغيرة فقط</Text>
-        </View>
-        <View style={styles.panel}>
-          <Text style={styles.label}>معرّف الجهاز المستهدف</Text>
-          <TextInput
-            value={targetId}
-            onChangeText={setTargetId}
-            placeholder="مثال: معرّف جهاز معروف"
-            placeholderTextColor="#71838E"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textAlign="right"
-            style={styles.input}
-          />
-          <View style={styles.buttonRow}>
-            <ActionButton title="إرسال Test Ping" onPress={handlePing} primary disabled={busy || !active} />
-            {busy && <ActivityIndicator color={palette.teal} />}
-          </View>
-          <Text style={styles.helperText}>النتيجة والمسار والتأكيد تظهر في سجل الأحداث، لا تُرسل بيانات مستخدم.</Text>
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>الأجهزة القريبة</Text>
-          <Text style={styles.sectionNote}>Bluetooth · Wi‑Fi Direct</Text>
-        </View>
-        <View style={styles.panel}>
-          {snapshot.peers.length === 0 ? (
-            <EmptyRow title="لم يُرصد جار مباشر" subtitle="استخدم زر البحث. لا تظهر مسافة بالمتر أو إشارة غير متاحة." />
-          ) : snapshot.peers.map((peer) => <PeerSignal key={`signal-${peer.id}`} peer={peer} />)}
-        </View>
-
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>سجل الأحداث</Text>
-          <Text style={styles.sectionNote}>محلي ومحدود</Text>
-        </View>
-        <View style={styles.panel}>
-          {allEvents.length === 0 ? (
-            <EmptyRow title="لا توجد أحداث" subtitle="يبدأ التسجيل بعد اكتشاف جهاز أو إرسال اختبار." />
-          ) : allEvents.map((event) => <EventRow key={event.id} event={event} />)}
-        </View>
-
-        <View style={styles.controlsPanel}>
-          <Text style={styles.sectionTitle}>إدارة الشبكة</Text>
-          <Text style={styles.label}>وضع تشغيل الراديو</Text>
-          <View style={styles.modeRow}>
-            <ModeChip title="متوازن" selected={mode === "balanced"} disabled={active || busy} onPress={() => setMode("balanced")} />
-            <ModeChip title="توفير البطارية" selected={mode === "battery"} disabled={active || busy} onPress={() => setMode("battery")} />
-          </View>
-          <Text style={styles.helperText}>{active ? "أوقف الشبكة أولًا لتغيير وضع المسح." : "وضع التوفير يباعد بين نوافذ اكتشاف BLE؛ وقد يؤخر ظهور الجيران."}</Text>
-          <View style={styles.buttonRow}>
-          <ActionButton title={active ? "إيقاف الشبكة" : "بدء الشبكة"} onPress={() => active ? void runAction(() => stopMesh(), "أُوقفت الشبكة المحلية.") : void handleStart()} primary={!active} disabled={busy || !isJesrNativeAvailable} />
-            <ActionButton title="البحث عن أجهزة" onPress={handleDiscover} disabled={busy || !active} />
-          </View>
-          <Text style={styles.privacyNote}>لا حسابات ولا موقع GPS ولا خادم. يتطلب Wi‑Fi Direct أن تكون Wi‑Fi مفعّلة، وقد يطلب النظام تفعيل إعداد الموقع على إصدارات معينة حتى دون جمعه.</Text>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>شبكة ترحيل تطبيقية للتشخيص · ليست Bluetooth Mesh الرسمية</Text>
-        </View>
-      </ScrollView>
-      <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={styles.addFab}>
-        <Text style={styles.addFabText}>+</Text>
-      </Pressable>
-      <Modal visible={settingsOpen} animationType="slide" transparent onRequestClose={() => setSettingsOpen(false)}>
-        <View style={styles.modalBackdrop}><View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>الإعدادات</Text>
-          <Text style={styles.modalLabel}>اسم المستخدم</Text>
-          <TextInput value={displayName} onChangeText={(value) => { setDisplayName(value); void AsyncStorage.setItem("jesr_display_name", value); }} style={styles.input} placeholderTextColor="#71838E" />
-          <Text style={styles.modalLabel}>قياس المسافة التقريبي</Text>
-          <Text style={styles.helperText}>لا تعرض الشبكة أمتارًا دون قياس موثوق. لا يُطلب هذا القياس إلا بموافقة الطرفين.</Text>
-          <Pressable onPress={() => setDistanceConsent((value) => !value)} style={styles.consentRow}><Text style={styles.consentBox}>{distanceConsent ? "✓" : ""}</Text><Text style={styles.consentText}>أوافق على طلب قياس المسافة</Text></Pressable>
-          <ActionButton title="عرض تقرير التشخيص السابق" onPress={() => { setSettingsOpen(false); void getDiagnosticReport().then((report) => { setDiagnosticReport(report); setDiagnosticOpen(true); }); }} />
-          <ActionButton title="إغلاق" onPress={() => setSettingsOpen(false)} primary />
-        </View></View>
-      </Modal>
-      <Modal visible={addOpen} animationType="slide" transparent onRequestClose={() => setAddOpen(false)}>
-        <View style={styles.modalBackdrop}><View style={styles.modalCard}>
-          <Text style={styles.modalTitle}>إضافة صديق</Text>
-          <Text style={styles.helperText}>البحث محلي فقط، ولا يتطلب Google أو رقم هاتف أو حسابًا.</Text>
-          <ActionButton title="البحث عن أجهزة قريبة" onPress={() => { setAddOpen(false); void handleDiscover(); }} primary disabled={busy || !active} />
-          <TextInput value={targetId} onChangeText={setTargetId} placeholder="اسم المستخدم أو ID" placeholderTextColor="#71838E" autoCapitalize="none" style={styles.input} />
-          <ActionButton title="إضافة بالاسم أو ID" onPress={() => { setAddOpen(false); setNotice(targetId.trim() ? `تم تجهيز طلب إضافة إلى ${shortId(targetId.trim())}.` : "أدخل اسم المستخدم أو ID أولًا."); }} />
-          <ActionButton title="إغلاق" onPress={() => setAddOpen(false)} />
-        </View></View>
-      </Modal>
-      <Modal visible={diagnosticOpen} animationType="slide" onRequestClose={() => setDiagnosticOpen(false)}>
-        <View style={styles.diagnosticScreen}>
-          <Text style={styles.modalTitle}>تقرير تشخيص Jesr</Text>
-          <Text style={styles.helperText}>يحتوي على مراحل التشغيل والأخطاء التقنية فقط. لا يسجل الرسائل أو كلمات المرور أو المفاتيح أو بيانات الأصدقاء.</Text>
-          <ScrollView style={styles.diagnosticTextBox}><Text selectable style={styles.diagnosticText}>{diagnosticReport}</Text></ScrollView>
-          <View style={styles.buttonRow}>
-            <ActionButton title="تصدير TXT" primary onPress={() => void exportDiagnosticReport().catch((error) => setNotice(error instanceof Error ? error.message : "تعذر تصدير التقرير"))} />
-            <ActionButton title="إغلاق" onPress={() => setDiagnosticOpen(false)} />
-          </View>
-        </View>
-      </Modal>
-    </ScreenContainer>
-  );
+  if (api >= 33) permissions.push(PermissionsAndroid.PERMISSIONS.NEARBY_WIFI_DEVICES);
+  else permissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+  const unique = [...new Set(permissions)];
+  const result = await PermissionsAndroid.requestMultiple(unique);
+  const denied = unique.filter((permission) => result[permission] !== PermissionsAndroid.RESULTS.GRANTED);
+  if (denied.length) throw new Error("يلزم السماح بأذونات الأجهزة القريبة حتى يبدأ جسر الاتصال تلقائيًا.");
+  if (api >= 33) await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
-  return <View style={styles.metricItem}><Text style={styles.metricValue}>{value}</Text><Text style={styles.metricLabel}>{label}</Text></View>;
-}
+const wheelSlices = Array.from({ length: 72 }, (_, i) => {
+  const start = (-90 + i * 5) * Math.PI / 180;
+  const end = (-90 + (i + 1) * 5) * Math.PI / 180;
+  const x1 = 88 + 82 * Math.cos(start); const y1 = 88 + 82 * Math.sin(start);
+  const x2 = 88 + 82 * Math.cos(end); const y2 = 88 + 82 * Math.sin(end);
+  const d = "M 88 88 L " + x1 + " " + y1 + " A 82 82 0 0 1 " + x2 + " " + y2 + " Z";
+  return { d, color: "hsl(" + (i * 5) + ", 88%, 36%)" };
+});
 
-function MetricCard({ title, value, note, color }: { title: string; value: string; note: string; color: string }) {
-  return <View style={styles.metricCard}><View style={[styles.metricAccent, { backgroundColor: color }]} /><Text style={styles.metricCardTitle}>{title}</Text><Text style={styles.metricCardValue}>{value}</Text><Text style={styles.metricCardNote}>{note}</Text></View>;
-}
-
-function LegendDot({ color, label, dashed = false }: { color: string; label: string; dashed?: boolean }) {
-  return <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: color, opacity: dashed ? 0.65 : 1 }]} /><Text style={styles.legendText}>{label}</Text></View>;
-}
-
-function EmptyRow({ title, subtitle }: { title: string; subtitle: string }) {
-  return <View style={styles.emptyRow}><Text style={styles.emptyTitle}>{title}</Text><Text style={styles.mutedText}>{subtitle}</Text></View>;
-}
-
-function PeerRow({ peer, onConnect }: { peer: JesrPeer; onConnect: () => void }) {
-  const color = peer.transport === "ble" ? palette.blue : palette.teal;
-  return (
-    <View style={styles.peerRow}>
-      <View style={[styles.peerGlyph, { borderColor: color }]}><View style={[styles.peerGlyphDot, { backgroundColor: color }]} /></View>
-      <View style={styles.flexOne}>
-        <Text style={styles.peerId}>{shortId(peer.id)}</Text>
-        <Text style={styles.mutedText}>{peer.direct ? "اتصال مباشر" : "جهاز مكتشف"} · {peer.transport === "ble" ? "Bluetooth LE" : "Wi‑Fi Direct"} · آخر مشاهدة {formatTime(peer.lastSeenAt)}</Text>
-      </View>
-      {peer.connected ? <Text style={styles.connectedLabel}>متصل</Text> : <Pressable onPress={onConnect} style={styles.smallButton}><Text style={styles.smallButtonText}>اتصال</Text></Pressable>}
-    </View>
-  );
-}
-
-function PeerSignal({ peer }: { peer: JesrPeer }) {
-  const hasRssi = typeof peer.rssiDbm === "number";
-  return (
-    <View style={styles.signalRow}>
-      <Text style={styles.signalValue}>{hasRssi ? `${peer.rssiDbm} dBm` : "غير متاح"}</Text>
-      <View style={styles.flexOne}>
-        <Text style={styles.peerId}>{shortId(peer.id)}</Text>
-        <Text style={styles.mutedText}>{peer.connected ? "قناة مباشرة" : "قريب، غير متصل"} · جودة {peer.qualityMeasured ? `${peer.quality}%` : "غير مقاسة"} · استقرار {peer.stabilityMeasured ? `${Math.round(peer.stability * 100)}%` : "غير مقاس"}</Text>
-      </View>
-      <View style={[styles.signalDot, { backgroundColor: peer.connected ? palette.teal : palette.muted }]} />
-    </View>
-  );
-}
-
-function EventRow({ event }: { event: JesrLogEvent }) {
-  return (
-    <View style={styles.eventRow}>
-      <View style={[styles.eventDot, { backgroundColor: eventColor(event.kind) }]} />
-      <View style={styles.flexOne}>
-        <Text style={styles.eventText}>{event.message}</Text>
-        {event.path && event.path.length > 1 && <Text style={styles.eventPath}>{event.path.map(shortId).join(" → ")}</Text>}
-      </View>
-      <Text style={styles.eventTime}>{formatTime(event.at)}</Text>
-    </View>
-  );
-}
-
-function ActionButton({ title, onPress, primary = false, disabled = false }: { title: string; onPress: () => void; primary?: boolean; disabled?: boolean }) {
+function ColorWheel({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const hue = getHue(value);
+  const angle = (hue - 90) * Math.PI / 180;
+  const markerX = 88 + 57 * Math.cos(angle); const markerY = 88 + 57 * Math.sin(angle);
   return (
     <Pressable
       accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [styles.actionButton, primary && styles.primaryButton, disabled && styles.disabledButton, pressed && !disabled && styles.pressedButton]}
+      accessibilityLabel="عجلة اختيار اللون"
+      onPress={(event) => {
+        const x = event.nativeEvent.locationX - 88;
+        const y = event.nativeEvent.locationY - 88;
+        const radius = Math.min(1, Math.sqrt(x * x + y * y) / 82);
+        const angleNow = Math.atan2(y, x) * 180 / Math.PI;
+        const selectedHue = (angleNow + 90 + 360) % 360;
+        const saturation = 72 + radius * 25;
+        onChange(hslToHex(selectedHue, saturation, 36));
+      }}
+      style={styles.wheel}
     >
-      <Text style={[styles.actionText, primary && styles.primaryText]}>{title}</Text>
+      <Svg width={176} height={176} viewBox="0 0 176 176">
+        {wheelSlices.map((slice, index) => <Path key={index} d={slice.d} fill={slice.color} />)}
+        <Circle cx={88} cy={88} r={82} stroke="#FFFFFF" strokeWidth={2} fill="none" />
+        <Circle cx={markerX} cy={markerY} r={9} fill={value} stroke="#FFFFFF" strokeWidth={3} />
+      </Svg>
     </Pressable>
   );
 }
 
-function ModeChip({ title, selected, disabled = false, onPress }: { title: string; selected: boolean; disabled?: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected, disabled }} disabled={disabled} onPress={onPress} style={[styles.modeChip, selected && styles.modeChipSelected, disabled && styles.disabledButton]}><Text style={[styles.modeText, selected && styles.modeTextSelected]}>{title}</Text></Pressable>;
+export default function HomeScreen() {
+  const api = useJesr();
+  const systemScheme = useColorScheme();
+  const systemDark = systemScheme === "dark";
+  const autoStarted = useRef(false);
+  const [tab, setTab] = useState<"chats" | "profile">("chats");
+  const [peer, setPeer] = useState<string | null>(null);
+  const [requestTab, setRequestTab] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [message, setMessage] = useState("");
+  const [friendId, setFriendId] = useState("");
+  const [name, setName] = useState("مستخدم جسر");
+  const [addOpen, setAddOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
+  const [networkError, setNetworkError] = useState("");
+  const [sending, setSending] = useState(false);
+  const [themeMode, setThemeMode] = useState<ThemeMode>("light");
+  const [accent, setAccent] = useState(ORIGINAL);
+  const [savedColors, setSavedColors] = useState<SavedColor[]>([ORIGINAL_COLOR]);
+  const [themeLoaded, setThemeLoaded] = useState(false);
+
+  const colors = useMemo(() => makePalette(themeMode, accent, systemDark), [themeMode, accent, systemDark]);
+
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.multiGet([THEME_MODE_KEY, ACCENT_KEY, SAVED_COLORS_KEY, "jesr_display_name"]).then((entries) => {
+      if (!alive) return;
+      const values = Object.fromEntries(entries);
+      if (values[THEME_MODE_KEY] === "auto" || values[THEME_MODE_KEY] === "light" || values[THEME_MODE_KEY] === "dark" || values[THEME_MODE_KEY] === "custom") {
+        setThemeMode(values[THEME_MODE_KEY] as ThemeMode);
+      }
+      if (values[ACCENT_KEY] && /^#[0-9A-Fa-f]{6}$/.test(values[ACCENT_KEY])) setAccent(values[ACCENT_KEY].toUpperCase());
+      if (values[SAVED_COLORS_KEY]) {
+        try {
+          const parsed = JSON.parse(values[SAVED_COLORS_KEY]) as SavedColor[];
+          const valid = Array.isArray(parsed) ? parsed.filter((item) => item && /^#[0-9A-Fa-f]{6}$/.test(item.hex)) : [];
+          setSavedColors([ORIGINAL_COLOR, ...valid.filter((item) => item.id !== "original")]);
+        } catch { setSavedColors([ORIGINAL_COLOR]); }
+      }
+      if (values.jesr_display_name) setName(values.jesr_display_name);
+      setThemeLoaded(true);
+    }).catch(() => setThemeLoaded(true));
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!themeLoaded) return;
+    void AsyncStorage.multiSet([
+      [THEME_MODE_KEY, themeMode],
+      [ACCENT_KEY, accent],
+      [SAVED_COLORS_KEY, JSON.stringify(savedColors)],
+    ]);
+  }, [themeLoaded, themeMode, accent, savedColors]);
+
+  useEffect(() => {
+    if (api.profile.name && api.profile.name !== "…") setName(api.profile.name);
+  }, [api.profile.name]);
+
+  useEffect(() => {
+    if (!isJesrNativeAvailable || autoStarted.current) return;
+    autoStarted.current = true;
+    let alive = true;
+    const begin = async () => {
+      try {
+        await requestNearbyPermissions();
+        if (!alive) return;
+        const snapshot = await getMeshSnapshot();
+        if (!snapshot.active) await startMesh("balanced");
+        if (alive) await discoverMeshPeers();
+      } catch (error) {
+        if (alive) setNetworkError(error instanceof Error ? error.message : "تعذر بدء الشبكة تلقائيًا.");
+      }
+    };
+    void begin();
+    return () => { alive = false; };
+  }, []);
+
+  const stylesColor = colors;
+  const isChat = peer !== null;
+  const messages = peer ? api.history(peer) : [];
+  useEffect(() => {
+    if (peer) void api.markRead(peer);
+  }, [peer, messages.length]);
+
+  const visibleChats = useMemo(
+    () => api.conversations.filter((item) => item.name.toLowerCase().includes(query.toLowerCase()) || item.peer.toLowerCase().includes(query.toLowerCase())),
+    [api.conversations, query],
+  );
+
+  async function submitFriend() {
+    const id = friendId.trim();
+    if (!id) { Alert.alert("إضافة صديق", "أدخل معرّف جسر الخاص بصديقك."); return; }
+    if (!api.ready) { Alert.alert("جسر", "المحرك لم يجهز بعد."); return; }
+    const result = await api.addFriend(id);
+    if (result) Alert.alert("تعذرت الإضافة", result);
+    else { setFriendId(""); setAddOpen(false); Alert.alert("طلب الصداقة", "أُرسل الطلب. سيظهر عند وصوله إلى الجهاز الآخر."); }
+  }
+
+  async function sendMessage() {
+    if (!peer || !message.trim() || sending) return;
+    const text = message.trim();
+    setSending(true);
+    try { await api.sendText(peer, text); setMessage(""); }
+    catch (error) { Alert.alert("تعذر الإرسال", error instanceof Error ? error.message : "تعذر إرسال الرسالة."); }
+    finally { setSending(false); }
+  }
+
+  async function saveName() {
+    if (!api.ready) return;
+    try { await api.setName(name); await AsyncStorage.setItem("jesr_display_name", name); Alert.alert("الحساب", "تم حفظ الاسم."); }
+    catch (error) { Alert.alert("الحساب", error instanceof Error ? error.message : "تعذر حفظ الاسم."); }
+  }
+
+  function saveCurrentColor() {
+    const hex = accent.toUpperCase();
+    if (savedColors.some((item) => item.hex === hex)) return;
+    const next = [...savedColors, { id: hex, name: "لون محفوظ", hex }];
+    setSavedColors(next);
+  }
+
+  function chooseSavedColor(item: SavedColor) {
+    setAccent(item.hex);
+    setThemeMode("custom");
+  }
+
+  const networkLabel = !isJesrNativeAvailable
+    ? "معاينة"
+    : api.meshActive ? "الشبكة تعمل" : networkError ? "بحاجة إلى إذن" : "يجري الاتصال";
+  const networkColor = !isJesrNativeAvailable ? colors.muted : api.meshActive ? "#4B9B73" : networkError ? "#C18B45" : colors.muted;
+
+  return (
+    <SafeAreaView style={[styles.app, { backgroundColor: stylesColor.page }]} edges={["top", "bottom"]}>
+      <StatusBar barStyle={luminance(stylesColor.top) < 0.35 ? "light-content" : "dark-content"} backgroundColor={stylesColor.top} />
+      {isChat ? (
+        <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <View style={[styles.chatHeader, { backgroundColor: stylesColor.surface, borderBottomColor: stylesColor.border }]}>
+            <Pressable onPress={() => setPeer(null)} style={styles.backButton}><Text style={[styles.backText, { color: stylesColor.primary }]}>‹</Text></Pressable>
+            <View style={[styles.avatar, { backgroundColor: stylesColor.primary }]}><Text style={[styles.avatarLetter, { color: stylesColor.primaryText }]}>{api.nameOf(peer || "").slice(0, 1)}</Text></View>
+            <View style={styles.flex}>
+              <Text style={[styles.contactName, { color: stylesColor.text }]}>{api.nameOf(peer || "")}</Text>
+              <Text style={[styles.contactState, { color: stylesColor.muted }]}>{api.meshActive ? "متصل بالشبكة المحلية" : "ستُرسل الرسائل عند عودة الاتصال"}</Text>
+            </View>
+          </View>
+          <ScrollView
+            style={[styles.chatBody, { backgroundColor: stylesColor.chat }]}
+            contentContainerStyle={styles.messageList}
+            keyboardShouldPersistTaps="handled"
+          >
+            {messages.length === 0 ? <Text style={styles.chatEmpty}>ابدأ المحادثة برسالتك الأولى</Text> : messages.map((item) => (
+              <View key={item.id} style={[styles.bubble, { alignSelf: item.dir === "out" ? "flex-end" : "flex-start", backgroundColor: item.dir === "out" ? stylesColor.bubbleOut : stylesColor.bubbleIn }]}>
+                <Text style={[styles.messageText, { color: stylesColor.bubbleText }]}>{item.text}</Text>
+                <Text style={[styles.messageMeta, { color: stylesColor.muted }]}>
+                  {new Date(item.ts).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })} {item.dir === "out" ? (item.status === "delivered" ? "✓✓" : item.status === "failed" ? "!" : "✓") : ""}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={[styles.composer, { backgroundColor: stylesColor.surface, borderTopColor: stylesColor.border }]}>
+            <TextInput
+              value={message}
+              onChangeText={setMessage}
+              placeholder="اكتب رسالة..."
+              placeholderTextColor={stylesColor.muted}
+              style={[styles.messageInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]}
+              multiline
+              maxLength={MAX_TEXT_CHARS}
+              textAlign="right"
+            />
+            <Pressable accessibilityRole="button" accessibilityLabel="إرسال الرسالة" disabled={!message.trim() || sending || !api.ready} onPress={sendMessage} style={[styles.sendButton, { backgroundColor: stylesColor.primary, opacity: !message.trim() || sending || !api.ready ? 0.5 : 1 }]}>
+              {sending ? <ActivityIndicator color={stylesColor.primaryText} /> : <Text style={[styles.sendGlyph, { color: stylesColor.primaryText }]}>➤</Text>}
+            </Pressable>
+          </View>
+        </KeyboardAvoidingView>
+      ) : (
+        <>
+          <View style={[styles.mainHeader, { backgroundColor: stylesColor.top }]}>
+            <View style={styles.headerMainRow}>
+              <View>
+                <Text style={styles.brand}>جسر</Text>
+                <Text style={styles.brandSub}>مراسلة محلية بلا إنترنت</Text>
+              </View>
+              <View style={styles.statusWrap}>
+                <View style={[styles.statusDot, { backgroundColor: networkColor }]} />
+                <Text style={styles.statusText}>{networkLabel}</Text>
+              </View>
+            </View>
+            {tab === "chats" ? (
+              <View style={styles.headerTitleRow}>
+                <Text style={styles.headerTitle}>المحادثات</Text>
+                <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={styles.addButton}>
+                  <Text style={[styles.addButtonText, { color: stylesColor.primaryText }]}>+</Text>
+                </Pressable>
+              </View>
+            ) : <Text style={styles.headerTitle}>حسابي</Text>}
+          </View>
+
+          <View style={[styles.sheet, { backgroundColor: stylesColor.surface }]}>
+            {tab === "chats" ? (
+              <>
+                <View style={styles.filterRow}>
+                  <Pressable onPress={() => setRequestTab(false)} style={[styles.filterChip, { backgroundColor: !requestTab ? stylesColor.primary : stylesColor.subtle }]}>
+                    <Text style={{ color: !requestTab ? stylesColor.primaryText : stylesColor.text }}>الرسائل</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setRequestTab(true)} style={[styles.filterChip, { backgroundColor: requestTab ? stylesColor.primary : stylesColor.subtle }]}>
+                    <Text style={{ color: requestTab ? stylesColor.primaryText : stylesColor.text }}>الطلبات {api.requests.length ? "(" + api.requests.length + ")" : ""}</Text>
+                  </Pressable>
+                  <View style={styles.flex} />
+                  <Pressable accessibilityRole="button" accessibilityLabel="بحث" onPress={() => { setSearchOpen((v) => !v); setQuery(""); }} style={styles.searchButton}>
+                    <Text style={[styles.searchGlyph, { color: stylesColor.primary }]}>⌕</Text>
+                  </Pressable>
+                </View>
+                {searchOpen && <TextInput value={query} onChangeText={setQuery} placeholder="ابحث عن محادثة أو معرّف..." placeholderTextColor={stylesColor.muted} style={[styles.searchInput, { backgroundColor: stylesColor.input, color: stylesColor.text }]} textAlign="right" />}
+                <Text style={[styles.listHeading, { color: stylesColor.text }]}>{requestTab ? "طلبات الصداقة" : "أحدث الرسائل"}</Text>
+                {requestTab ? (
+                  <FlatList
+                    data={api.requests}
+                    keyExtractor={(item) => item.jesrId}
+                    ListEmptyComponent={<Text style={[styles.emptyText, { color: stylesColor.muted }]}>لا توجد طلبات حاليًا</Text>}
+                    renderItem={({ item }) => (
+                      <View style={[styles.contactRow, { borderBottomColor: stylesColor.border }]}>
+                        <View style={[styles.avatar, { backgroundColor: stylesColor.primary }]}><Text style={[styles.avatarLetter, { color: stylesColor.primaryText }]}>{item.name.slice(0, 1)}</Text></View>
+                        <View style={styles.flex}>
+                          <Text style={[styles.contactName, { color: stylesColor.text }]}>{item.name}</Text>
+                          <Text style={[styles.preview, { color: stylesColor.muted }]}>{item.state === "incoming" ? "يريد إضافتك" : "بانتظار الموافقة"}</Text>
+                        </View>
+                        {item.state === "incoming" && (
+                          <View style={styles.requestActions}>
+                            <Pressable onPress={() => void api.accept(item.jesrId)} style={[styles.miniAction, { backgroundColor: stylesColor.primary }]}><Text style={{ color: stylesColor.primaryText }}>قبول</Text></Pressable>
+                            <Pressable onPress={() => void api.reject(item.jesrId)} style={[styles.miniAction, { backgroundColor: stylesColor.subtle }]}><Text style={{ color: stylesColor.text }}>رفض</Text></Pressable>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  />
+                ) : (
+                  <FlatList
+                    data={visibleChats}
+                    keyExtractor={(item) => item.peer}
+                    ListEmptyComponent={<Text style={[styles.emptyText, { color: stylesColor.muted }]}>{api.ready ? "لا توجد محادثات بعد. أضف صديقًا للبدء." : "يتم تجهيز المحرك المحلي..."}</Text>}
+                    renderItem={({ item }) => (
+                      <Pressable onPress={() => setPeer(item.peer)} style={[styles.contactRow, { borderBottomColor: stylesColor.border }]}>
+                        <View style={[styles.avatar, { backgroundColor: stylesColor.primary }]}><Text style={[styles.avatarLetter, { color: stylesColor.primaryText }]}>{item.name.slice(0, 1)}</Text></View>
+                        <View style={styles.flex}>
+                          <Text numberOfLines={1} style={[styles.contactName, { color: stylesColor.text }]}>{item.name}</Text>
+                          <Text numberOfLines={1} style={[styles.preview, { color: stylesColor.muted }]}>{item.last?.text ?? "ابدأ محادثة جديدة"}</Text>
+                        </View>
+                        <View style={styles.chatMeta}>
+                          <Text style={[styles.timeText, { color: stylesColor.muted }]}>{item.last ? new Date(item.last.ts).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" }) : ""}</Text>
+                          {item.unread > 0 ? <Text style={[styles.unread, { backgroundColor: stylesColor.primary, color: stylesColor.primaryText }]}>{item.unread}</Text> : <Text style={{ color: stylesColor.primary, fontSize: 12 }}>{item.last?.dir === "out" ? (item.last.status === "delivered" ? "✓✓" : "✓") : ""}</Text>}
+                        </View>
+                      </Pressable>
+                    )}
+                  />
+                )}
+                {networkError ? <Text style={[styles.networkError, { color: stylesColor.muted }]}>{networkError}</Text> : null}
+                {!api.ready && <Text style={[styles.networkError, { color: stylesColor.muted }]}>إن كانت هذه نسخة معاينة، فالإرسال الحقيقي يتطلب APK أندرويد مدمجًا بمحرك جسر.</Text>}
+              </>
+            ) : (
+              <ScrollView contentContainerStyle={styles.profileContent}>
+                <View style={[styles.profileCard, { backgroundColor: stylesColor.surfaceAlt, borderColor: stylesColor.border }]}>
+                  <Text style={[styles.cardTitle, { color: stylesColor.text }]}>ملفك الشخصي</Text>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>معرّف جسر</Text>
+                  <Text selectable style={[styles.profileId, { color: stylesColor.text }]}>{api.profile.jesrId}</Text>
+                  <Pressable disabled={!api.ready} onPress={() => Share.share({ message: "أضفني على جسر باستخدام هذا المعرّف:\n" + api.profile.jesrId })} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
+                    <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>مشاركة المعرّف</Text>
+                  </Pressable>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>اسم العرض</Text>
+                  <TextInput value={name} onChangeText={setName} maxLength={30} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} textAlign="right" />
+                  <Pressable onPress={() => void saveName()} disabled={!api.ready} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
+                    <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>حفظ الاسم</Text>
+                  </Pressable>
+                </View>
+                <View style={[styles.profileCard, { backgroundColor: stylesColor.surfaceAlt, borderColor: stylesColor.border }]}>
+                  <Text style={[styles.cardTitle, { color: stylesColor.text }]}>المظهر والألوان</Text>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>اختر مظهر جسر، ويمكن تخصيص اللون وحفظه.</Text>
+                  <Pressable onPress={() => setThemeOpen(true)} style={[styles.primaryWide, { backgroundColor: stylesColor.primary }]}>
+                    <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>فتح إعدادات المظهر</Text>
+                  </Pressable>
+                </View>
+                <View style={[styles.profileCard, { backgroundColor: stylesColor.surfaceAlt, borderColor: stylesColor.border }]}>
+                  <Text style={[styles.cardTitle, { color: stylesColor.text }]}>حالة الشبكة</Text>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>{api.meshActive ? "الشبكة المحلية تعمل ويجري اكتشاف الأجهزة تلقائيًا." : isJesrNativeAvailable ? "يحاول جسر بدء الشبكة تلقائيًا عند فتح التطبيق." : "المعاينة لا تتصل بالأجهزة الحقيقية."}</Text>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+          <View style={[styles.bottomNav, { backgroundColor: stylesColor.surface, borderTopColor: stylesColor.border }]}>
+            <Pressable onPress={() => setTab("chats")} style={styles.navItem}>
+              <Text style={[styles.navGlyph, { color: tab === "chats" ? stylesColor.primary : stylesColor.muted }]}>▤</Text>
+              <Text style={[styles.navLabel, { color: tab === "chats" ? stylesColor.primary : stylesColor.muted }]}>المحادثات</Text>
+            </Pressable>
+            <Pressable onPress={() => setTab("profile")} style={styles.navItem}>
+              <Text style={[styles.navGlyph, { color: tab === "profile" ? stylesColor.primary : stylesColor.muted }]}>◉</Text>
+              <Text style={[styles.navLabel, { color: tab === "profile" ? stylesColor.primary : stylesColor.muted }]}>حسابي</Text>
+            </Pressable>
+          </View>
+          {tab === "chats" && (
+            <Pressable accessibilityRole="button" accessibilityLabel="إضافة صديق" onPress={() => setAddOpen(true)} style={[styles.fab, { backgroundColor: stylesColor.primary }]}>
+              <Text style={[styles.fabText, { color: stylesColor.primaryText }]}>+</Text>
+            </Pressable>
+          )}
+        </>
+      )}
+
+      <Modal visible={addOpen} animationType="slide" transparent onRequestClose={() => setAddOpen(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.sheetModal, { backgroundColor: stylesColor.surface }]}>
+            <Text style={[styles.modalTitle, { color: stylesColor.text }]}>إضافة صديق</Text>
+            <Text style={[styles.modalHint, { color: stylesColor.muted }]}>أدخل معرّف جسر الذي يظهر في حساب صديقك. يجب أن يكون الجهازان قريبين ومتصليْن بالشبكة المحلية لإتمام الطلب.</Text>
+            <TextInput value={friendId} onChangeText={setFriendId} placeholder="JESR-XXXX-XXXX" placeholderTextColor={stylesColor.muted} autoCapitalize="characters" autoCorrect={false} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} />
+            <Pressable onPress={() => void submitFriend()} disabled={!api.ready} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
+              <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>إرسال طلب الصداقة</Text>
+            </Pressable>
+            <Pressable onPress={() => setAddOpen(false)} style={[styles.secondaryWide, { borderColor: stylesColor.border }]}>
+              <Text style={{ color: stylesColor.text }}>إلغاء</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={themeOpen} animationType="slide" transparent onRequestClose={() => setThemeOpen(false)}>
+        <View style={styles.backdrop}>
+          <View style={[styles.themeSheet, { backgroundColor: stylesColor.surface }]}>
+            <Text style={[styles.modalTitle, { color: stylesColor.text }]}>المظهر والألوان</Text>
+            <Text style={[styles.modalHint, { color: stylesColor.muted }]}>أربعة اختيارات، مع الاحتفاظ بالثيم الأصلي وإتاحة ألوانك الخاصة.</Text>
+            <View style={styles.themeModes}>
+              {([
+                ["auto", "تلقائي"],
+                ["light", "أبيض"],
+                ["dark", "أسود"],
+                ["custom", "لون مخصص"],
+              ] as [ThemeMode, string][]).map(([value, label]) => (
+                <Pressable key={value} onPress={() => setThemeMode(value)} style={[styles.modeButton, { backgroundColor: themeMode === value ? stylesColor.primary : stylesColor.subtle, borderColor: stylesColor.border }]}>
+                  <Text style={{ color: themeMode === value ? stylesColor.primaryText : stylesColor.text, fontWeight: "700", fontSize: 12 }}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+            {themeMode === "custom" && (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.colorPickerContent}>
+                <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>اختر اللون من العجلة</Text>
+                <ColorWheel value={accent} onChange={setAccent} />
+                <Text style={[styles.hexValue, { color: stylesColor.text }]}>{accent.toUpperCase()}</Text>
+                <View style={styles.savedHeader}>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>الألوان المحفوظة</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel="حفظ اللون الحالي" onPress={saveCurrentColor} style={[styles.saveColorButton, { backgroundColor: stylesColor.primary }]}>
+                    <Text style={[styles.saveColorText, { color: stylesColor.primaryText }]}>+</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.swatchList}>
+                  {savedColors.map((item) => (
+                    <View key={item.id} style={styles.swatchItem}>
+                      <Pressable onPress={() => chooseSavedColor(item)} style={[styles.swatch, { backgroundColor: item.hex, borderColor: accent === item.hex ? stylesColor.text : stylesColor.border, borderWidth: accent === item.hex ? 3 : 1 }]} />
+                      <Text style={[styles.swatchLabel, { color: stylesColor.text }]}>{item.name}</Text>
+                      {item.id !== "original" && (
+                        <Pressable accessibilityRole="button" accessibilityLabel="حذف اللون المحفوظ" onPress={() => setSavedColors((items) => items.filter((color) => color.id !== item.id))} style={styles.removeSwatch}>
+                          <Text style={{ color: stylesColor.muted }}>×</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            )}
+            <Pressable onPress={() => setThemeOpen(false)} style={[styles.primaryWide, { backgroundColor: stylesColor.primary }]}>
+              <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>تم</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: palette.background },
-  content: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 36, gap: 16 },
-  header: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 4 },
-  menuButton: { width: 38, height: 38, borderRadius: 12, borderWidth: 1, borderColor: palette.line, alignItems: "center", justifyContent: "center", backgroundColor: palette.panel },
-  menuText: { color: palette.text, fontSize: 22, lineHeight: 24 },
-  brandLine: { flexDirection: "row-reverse", alignItems: "center", gap: 10 },
-  markFrame: { width: 46, height: 46, borderRadius: 14, overflow: "hidden", borderWidth: 1, borderColor: palette.line },
-  logo: { width: 46, height: 46 },
-  headerText: { alignItems: "flex-end" },
-  brandName: { color: palette.text, fontSize: 25, fontWeight: "800", writingDirection: "rtl" },
-  brandSub: { color: palette.muted, fontSize: 11, writingDirection: "rtl" },
-  statusBadge: { flexDirection: "row-reverse", gap: 7, alignItems: "center", borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 30 },
-  statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusText: { fontSize: 11, fontWeight: "700", writingDirection: "rtl" },
-  warningBox: { padding: 14, backgroundColor: "#332B20", borderRadius: 15, borderWidth: 1, borderColor: "#604B2B", gap: 4 },
-  warningTitle: { color: palette.amber, fontSize: 13, fontWeight: "800", textAlign: "right", writingDirection: "rtl" },
-  warningText: { color: "#E5D5B9", fontSize: 12, lineHeight: 19, textAlign: "right", writingDirection: "rtl" },
-  noticeBox: { backgroundColor: "#203746", borderColor: "#376077", borderWidth: 1, borderRadius: 14, padding: 12, flexDirection: "row-reverse", gap: 10, alignItems: "center" },
-  noticeText: { flex: 1, color: palette.text, fontSize: 12, lineHeight: 18, textAlign: "right", writingDirection: "rtl" },
-  dismiss: { color: palette.blue, fontSize: 11, fontWeight: "700" },
-  identityCard: { borderRadius: 20, padding: 17, backgroundColor: palette.panel, borderWidth: 1, borderColor: palette.line, gap: 16 },
-  identityHead: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
-  eyebrow: { color: palette.muted, fontSize: 11, textAlign: "right", writingDirection: "rtl" },
-  identityValue: { color: palette.text, fontSize: 13, lineHeight: 17, fontWeight: "700", textAlign: "right", writingDirection: "ltr", marginTop: 4, fontVariant: ["tabular-nums"] },
-  localOnlyPill: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: "#173D3C" },
-  localOnlyText: { color: palette.teal, fontSize: 11, fontWeight: "700", writingDirection: "rtl" },
-  metricsRow: { flexDirection: "row-reverse", borderTopWidth: 1, borderColor: palette.line, paddingTop: 13 },
-  metricItem: { flex: 1, alignItems: "center", gap: 4 },
-  metricValue: { color: palette.text, fontWeight: "800", fontSize: 18, fontVariant: ["tabular-nums"] },
-  metricLabel: { color: palette.muted, fontSize: 10, textAlign: "center", writingDirection: "rtl" },
-  sectionHeader: { flexDirection: "row-reverse", alignItems: "baseline", justifyContent: "space-between", marginTop: 4 },
-  sectionTitle: { color: palette.text, fontSize: 16, fontWeight: "800", textAlign: "right", writingDirection: "rtl" },
-  sectionNote: { color: palette.muted, fontSize: 10, writingDirection: "rtl" },
-  topologyCard: { backgroundColor: palette.panel, borderRadius: 20, borderColor: palette.line, borderWidth: 1, padding: 9, alignItems: "center" },
-  emptyMap: { height: 176, width: "100%", justifyContent: "center", alignItems: "center", gap: 8 },
-  emptyNodeCenter: { width: 28, height: 28, borderRadius: 14, backgroundColor: palette.teal, borderWidth: 7, borderColor: "#275A5C" },
-  emptyMapTitle: { color: palette.text, fontSize: 13, fontWeight: "700", textAlign: "center", writingDirection: "rtl" },
-  emptyMapText: { color: palette.muted, fontSize: 11, textAlign: "center", lineHeight: 17, writingDirection: "rtl" },
-  legendRow: { flexDirection: "row-reverse", gap: 18, paddingTop: 4, paddingBottom: 3 },
-  legendItem: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
-  legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { color: palette.muted, fontSize: 10, writingDirection: "rtl" },
-  metricsGrid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 10 },
-  metricCard: { width: "48%", flexGrow: 1, minHeight: 106, backgroundColor: palette.panel, borderRadius: 16, borderWidth: 1, borderColor: palette.line, padding: 13, gap: 5, overflow: "hidden" },
-  metricAccent: { position: "absolute", right: 0, top: 0, bottom: 0, width: 3 },
-  metricCardTitle: { color: palette.muted, fontSize: 11, textAlign: "right", writingDirection: "rtl" },
-  metricCardValue: { color: palette.text, fontSize: 17, fontWeight: "800", textAlign: "right", marginTop: 3, writingDirection: "rtl" },
-  metricCardNote: { color: palette.muted, fontSize: 10, textAlign: "right", writingDirection: "rtl" },
-  panel: { backgroundColor: palette.panel, borderRadius: 18, borderWidth: 1, borderColor: palette.line, paddingHorizontal: 14, paddingVertical: 4 },
-  emptyRow: { paddingVertical: 16, gap: 5, alignItems: "flex-end" },
-  emptyTitle: { color: palette.text, fontSize: 12, fontWeight: "700", textAlign: "right", writingDirection: "rtl" },
-  mutedText: { color: palette.muted, fontSize: 10, lineHeight: 15, textAlign: "right", writingDirection: "rtl" },
-  peerRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
-  peerGlyph: { width: 31, height: 31, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-  peerGlyphDot: { width: 8, height: 8, borderRadius: 4 },
-  flexOne: { flex: 1 },
-  peerId: { color: palette.text, fontSize: 12, fontWeight: "700", textAlign: "right", writingDirection: "ltr", fontVariant: ["tabular-nums"] },
-  connectedLabel: { color: palette.teal, fontSize: 10, fontWeight: "700", writingDirection: "rtl" },
-  smallButton: { borderWidth: 1, borderColor: palette.line, borderRadius: 9, paddingHorizontal: 11, paddingVertical: 6 },
-  smallButtonText: { color: palette.text, fontSize: 10, fontWeight: "700", writingDirection: "rtl" },
-  routeRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
-  relayMark: { width: 29, height: 29, borderRadius: 15, backgroundColor: "#473721", alignItems: "center", justifyContent: "center" },
-  relayMarkText: { color: palette.amber, fontSize: 11, fontWeight: "800" },
-  routeLabel: { color: palette.amber, fontSize: 9, writingDirection: "rtl" },
-  label: { color: palette.muted, fontSize: 11, textAlign: "right", writingDirection: "rtl", marginTop: 12, marginBottom: 7 },
-  input: { height: 45, borderRadius: 11, backgroundColor: palette.background, borderWidth: 1, borderColor: palette.line, color: palette.text, paddingHorizontal: 12, fontSize: 12, writingDirection: "ltr" },
-  buttonRow: { flexDirection: "row-reverse", alignItems: "center", gap: 9, marginTop: 12 },
-  actionButton: { minHeight: 42, paddingHorizontal: 14, borderRadius: 11, borderWidth: 1, borderColor: palette.line, justifyContent: "center", alignItems: "center", backgroundColor: palette.panelRaised },
-  primaryButton: { backgroundColor: palette.teal, borderColor: palette.teal },
-  disabledButton: { opacity: 0.42 },
-  pressedButton: { opacity: 0.78 },
-  actionText: { color: palette.text, fontSize: 11, fontWeight: "700", writingDirection: "rtl" },
-  primaryText: { color: "#071C20" },
-  helperText: { color: palette.muted, fontSize: 10, lineHeight: 16, textAlign: "right", writingDirection: "rtl", marginTop: 8 },
-  signalRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
-  signalValue: { color: palette.blue, fontSize: 11, minWidth: 68, textAlign: "left", fontVariant: ["tabular-nums"] },
-  signalDot: { width: 7, height: 7, borderRadius: 4 },
-  eventRow: { flexDirection: "row-reverse", alignItems: "flex-start", gap: 9, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: palette.line },
-  eventDot: { width: 7, height: 7, borderRadius: 4, marginTop: 5 },
-  eventText: { color: palette.text, fontSize: 11, lineHeight: 17, textAlign: "right", writingDirection: "rtl" },
-  eventPath: { color: palette.amber, fontSize: 9, textAlign: "right", writingDirection: "ltr", marginTop: 3 },
-  eventTime: { color: palette.muted, fontSize: 9, minWidth: 44, textAlign: "left", fontVariant: ["tabular-nums"] },
-  controlsPanel: { backgroundColor: palette.panel, borderRadius: 18, padding: 15, borderWidth: 1, borderColor: palette.line },
-  modeRow: { flexDirection: "row-reverse", gap: 9 },
-  modeChip: { borderWidth: 1, borderColor: palette.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  modeChipSelected: { borderColor: palette.teal, backgroundColor: "#173D3C" },
-  modeText: { color: palette.muted, fontSize: 10, fontWeight: "700", writingDirection: "rtl" },
-  modeTextSelected: { color: palette.teal },
-  privacyNote: { color: palette.muted, fontSize: 10, lineHeight: 16, textAlign: "right", writingDirection: "rtl", marginTop: 12 },
-  footer: { paddingTop: 1, alignItems: "center" },
-  footerText: { color: "#72838D", fontSize: 9, textAlign: "center", writingDirection: "rtl" },
-  addFab: { position: "absolute", left: 18, bottom: 22, width: 58, height: 58, borderRadius: 29, backgroundColor: palette.teal, alignItems: "center", justifyContent: "center", elevation: 5 },
-  addFabText: { color: "#071C20", fontSize: 34, lineHeight: 38, fontWeight: "300" },
-  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.58)" },
-  modalCard: { backgroundColor: palette.panel, borderTopLeftRadius: 22, borderTopRightRadius: 22, borderColor: palette.line, borderWidth: 1, padding: 18, gap: 10 },
-  modalTitle: { color: palette.text, fontSize: 19, fontWeight: "800", textAlign: "right", writingDirection: "rtl" },
-  modalLabel: { color: palette.muted, fontSize: 11, textAlign: "right", writingDirection: "rtl", marginTop: 5 },
-  consentRow: { flexDirection: "row-reverse", alignItems: "center", gap: 9, paddingVertical: 8 },
-  consentBox: { width: 23, height: 23, borderRadius: 6, borderWidth: 1, borderColor: palette.teal, color: palette.teal, textAlign: "center", lineHeight: 21 },
-  consentText: { color: palette.text, fontSize: 11, writingDirection: "rtl" },
-  diagnosticScreen: { flex: 1, backgroundColor: palette.background, padding: 18, paddingTop: 56, gap: 12 },
-  diagnosticTextBox: { flex: 1, backgroundColor: palette.panel, borderColor: palette.line, borderWidth: 1, borderRadius: 12, padding: 12 },
-  diagnosticText: { color: palette.text, fontSize: 11, lineHeight: 17, writingDirection: "ltr" },
+  app: { flex: 1 },
+  flex: { flex: 1 },
+  mainHeader: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 23, borderBottomLeftRadius: 26, borderBottomRightRadius: 26 },
+  headerMainRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  brand: { color: "#FFFFFF", fontSize: 27, fontWeight: "800", textAlign: "right" },
+  brandSub: { color: "#E5EAE4", fontSize: 11, textAlign: "right", marginTop: 2 },
+  statusWrap: { flexDirection: "row-reverse", alignItems: "center", gap: 7, backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 20, paddingHorizontal: 11, paddingVertical: 7 },
+  statusDot: { width: 7, height: 7, borderRadius: 5 },
+  statusText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
+  headerTitleRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 18 },
+  headerTitle: { color: "#FFFFFF", fontSize: 19, fontWeight: "700", textAlign: "right" },
+  addButton: { width: 40, height: 40, borderRadius: 22, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.8)", alignItems: "center", justifyContent: "center" },
+  addButtonText: { fontSize: 28, lineHeight: 31, fontWeight: "300" },
+  sheet: { flex: 1, marginTop: -1, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },
+  filterRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  filterChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 22 },
+  searchButton: { width: 35, height: 35, alignItems: "center", justifyContent: "center" },
+  searchGlyph: { fontSize: 27, lineHeight: 31 },
+  searchInput: { marginTop: 12, borderRadius: 14, paddingHorizontal: 13, paddingVertical: 11, fontSize: 13 },
+  listHeading: { textAlign: "right", fontSize: 17, fontWeight: "700", marginTop: 18, marginBottom: 8 },
+  emptyText: { textAlign: "center", paddingTop: 40, fontSize: 13 },
+  contactRow: { flexDirection: "row-reverse", alignItems: "center", gap: 12, paddingVertical: 11, borderBottomWidth: StyleSheet.hairlineWidth },
+  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
+  avatarLetter: { fontSize: 21, fontWeight: "700" },
+  contactName: { fontSize: 14, fontWeight: "700", textAlign: "right" },
+  preview: { fontSize: 12, textAlign: "right", marginTop: 4 },
+  chatMeta: { alignItems: "flex-end", gap: 5 },
+  timeText: { fontSize: 10 },
+  unread: { minWidth: 19, height: 19, lineHeight: 19, textAlign: "center", borderRadius: 10, fontSize: 10, overflow: "hidden" },
+  requestActions: { flexDirection: "row-reverse", gap: 5 },
+  miniAction: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 7 },
+  networkError: { fontSize: 11, textAlign: "right", marginTop: 7 },
+  bottomNav: { minHeight: 62, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: "row", justifyContent: "space-around", alignItems: "center" },
+  navItem: { minWidth: 96, alignItems: "center", gap: 2, paddingVertical: 5 },
+  navGlyph: { fontSize: 22 },
+  navLabel: { fontSize: 10, fontWeight: "600" },
+  fab: { position: "absolute", right: 20, bottom: 82, width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", elevation: 6 },
+  fabText: { fontSize: 33, lineHeight: 37, fontWeight: "300" },
+  profileContent: { gap: 14, paddingBottom: 20 },
+  profileCard: { padding: 16, borderRadius: 20, borderWidth: 1, gap: 10 },
+  cardTitle: { fontSize: 16, fontWeight: "800", textAlign: "right" },
+  profileLabel: { fontSize: 12, textAlign: "right" },
+  profileId: { fontSize: 14, textAlign: "center", letterSpacing: 1 },
+  profileInput: { borderRadius: 13, paddingHorizontal: 13, paddingVertical: 12, fontSize: 14 },
+  primaryWide: { minHeight: 44, alignItems: "center", justifyContent: "center", borderRadius: 14, paddingHorizontal: 14 },
+  secondaryWide: { minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 14, borderWidth: 1 },
+  chatHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 11, padding: 12, borderBottomWidth: StyleSheet.hairlineWidth },
+  backButton: { width: 36, height: 40, alignItems: "center", justifyContent: "center" },
+  backText: { fontSize: 34, lineHeight: 38 },
+  contactState: { fontSize: 10, textAlign: "right", marginTop: 3 },
+  chatBody: { flex: 1, margin: 7, borderRadius: 27 },
+  messageList: { padding: 14, gap: 9, flexGrow: 1, justifyContent: "flex-end" },
+  chatEmpty: { textAlign: "center", color: "#FFFFFF", fontSize: 13, marginVertical: 35 },
+  bubble: { maxWidth: "82%", borderRadius: 19, paddingHorizontal: 13, paddingVertical: 9 },
+  messageText: { fontSize: 14, textAlign: "right", lineHeight: 21 },
+  messageMeta: { fontSize: 9, textAlign: "left", marginTop: 4 },
+  composer: { flexDirection: "row-reverse", alignItems: "flex-end", gap: 9, padding: 11, borderTopWidth: StyleSheet.hairlineWidth },
+  messageInput: { flex: 1, minHeight: 43, maxHeight: 110, borderRadius: 22, paddingHorizontal: 15, paddingVertical: 10, fontSize: 14 },
+  sendButton: { width: 43, height: 43, borderRadius: 23, alignItems: "center", justifyContent: "center" },
+  sendGlyph: { fontSize: 21 },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.52)", justifyContent: "flex-end" },
+  sheetModal: { padding: 20, borderTopLeftRadius: 25, borderTopRightRadius: 25, gap: 13 },
+  themeSheet: { maxHeight: "88%", padding: 20, borderTopLeftRadius: 25, borderTopRightRadius: 25, gap: 13 },
+  modalTitle: { fontSize: 19, fontWeight: "800", textAlign: "right" },
+  modalHint: { fontSize: 12, lineHeight: 19, textAlign: "right" },
+  themeModes: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
+  modeButton: { minWidth: "47%", alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 13, paddingVertical: 11 },
+  colorPickerContent: { alignItems: "center", gap: 9, paddingVertical: 4 },
+  wheel: { width: 176, height: 176 },
+  hexValue: { fontSize: 13, fontWeight: "700", letterSpacing: 1 },
+  savedHeader: { width: "100%", flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 5 },
+  saveColorButton: { width: 34, height: 34, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  saveColorText: { fontSize: 27, lineHeight: 30 },
+  swatchList: { width: "100%", flexDirection: "row-reverse", flexWrap: "wrap", gap: 10 },
+  swatchItem: { alignItems: "center", gap: 4, minWidth: 58 },
+  swatch: { width: 33, height: 33, borderRadius: 18 },
+  swatchLabel: { fontSize: 9 },
+  removeSwatch: { position: "absolute", top: -5, left: -3, width: 17, height: 17, borderRadius: 9, backgroundColor: "#D0D7DC", alignItems: "center", justifyContent: "center" },
 });
+
