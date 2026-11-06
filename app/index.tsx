@@ -381,9 +381,9 @@ export default function HomeScreen() {
                 <Text style={[styles.brand, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>جسر</Text>
                 <Text style={[styles.brandSub, { color: luminance(stylesColor.top) < 0.45 ? "#E5EAE4" : "#303A33" }]}>مراسلة محلية بلا إنترنت</Text>
               </View>
-              <View style={styles.statusWrap}>
+              <View style={[styles.statusWrap, { backgroundColor: luminance(stylesColor.top) < 0.45 ? "rgba(255,255,255,0.15)" : "rgba(33,37,41,0.08)" }]}>
                 <View style={[styles.statusDot, { backgroundColor: networkColor }]} />
-                <Text style={styles.statusText}>{networkLabel}</Text>
+                <Text style={[styles.statusText, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>{networkLabel}</Text>
               </View>
             </View>
             {tab === "chats" ? (
@@ -393,7 +393,7 @@ export default function HomeScreen() {
                   <Text style={[styles.addButtonText, { color: stylesColor.primaryText }]}>+</Text>
                 </Pressable>
               </View>
-            ) : <Text style={styles.headerTitle}>حسابي</Text>}
+            ) : <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>حسابي</Text>}
           </View>
 
           <View style={[styles.sheet, { backgroundColor: stylesColor.surface }]}>
