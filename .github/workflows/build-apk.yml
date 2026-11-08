@@ -6,6 +6,7 @@ on:
     branches:
       - main
       - fix/jesr-apk-build
+      - release/jesr-2.9
 
 permissions:
   contents: read
@@ -55,13 +56,15 @@ jobs:
       - name: TypeScript validation
         run: pnpm check
 
+      - name: ESLint validation
+        run: pnpm lint
+
       - name: Generate native Android project
         run: npx expo prebuild --platform android --no-install --clean
 
       - name: Verify Jesr native module autolinking
         run: |
           npx expo-modules-autolinking resolve --platform android > autolinking.json
-          cat autolinking.json
           grep -q "jesr-network" autolinking.json
           grep -q "JesrNetworkModule" autolinking.json
 
@@ -75,20 +78,25 @@ jobs:
           set -euo pipefail
           APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
-          cp "$APK" Jesr-1.8.0.apk
+          cp "$APK" 'جسر-2.9.apk'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/apksigner" verify --verbose Jesr-1.8.0.apk
-          "$BT/aapt2" dump badging Jesr-1.8.0.apk | tee badging.txt
-          grep -q "versionName='1.8.0'" badging.txt
-          unzip -l Jesr-1.8.0.apk > apk-files.txt
+          "$BT/apksigner" verify --verbose 'جسر-2.9.apk'
+          "$BT/aapt2" dump badging 'جسر-2.9.apk' | tee badging.txt
+          grep -q "versionName='2.9'" badging.txt
+          grep -q "versionCode='29'" badging.txt
+          grep -q "application-label:'جسر'" badging.txt
+          unzip -l 'جسر-2.9.apk' > apk-files.txt
           grep -q "lib/arm64-v8a/" apk-files.txt
+          grep -q "lib/arm64-v8a/libsodium.so" apk-files.txt
           ! grep -q "lib/armeabi-v7a/" apk-files.txt
-          sha256sum Jesr-1.8.0.apk
-          ls -lh Jesr-1.8.0.apk
+          sha256sum 'جسر-2.9.apk' | tee apk-sha256.txt
+          ls -lh 'جسر-2.9.apk'
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: Jesr-1.8.0-Android-APK
-          path: Jesr-1.8.0.apk
+          name: جسر-2.9-Android-APK
+          path: |
+            جسر-2.9.apk
+            apk-sha256.txt
           if-no-files-found: error
