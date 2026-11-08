@@ -93,10 +93,12 @@ function useNativeApi(): ChatApi {
 }
 
 /** Design preview only (web / Expo Go): fixed sample data, no crypto, no network. Clearly labelled in the UI. */
+const PREVIEW_BASE_TIME = Date.parse("2026-11-08T18:00:00.000Z");
+
 function usePreviewApi(): ChatApi {
   const [msgs, setMsgs] = useState<ChatMessage[]>([
-    { id: "1", peer: "JESR-AAAA", dir: "in", text: "مرحبًا، هل وصلتك الرسالة؟", ts: Date.now() - 600000, status: "delivered" },
-    { id: "2", peer: "JESR-AAAA", dir: "out", text: "نعم وصلت", ts: Date.now() - 500000, status: "delivered" },
+    { id: "1", peer: "JESR-AAAA", dir: "in", text: "مرحبًا، هل وصلتك الرسالة؟", ts: PREVIEW_BASE_TIME - 600000, status: "delivered" },
+    { id: "2", peer: "JESR-AAAA", dir: "out", text: "نعم وصلت", ts: PREVIEW_BASE_TIME - 500000, status: "delivered" },
   ]);
   return useMemo<ChatApi>(() => ({
     mode: "preview", ready: true, profile: { jesrId: "JESR-PREVIEW", name: "معاينة" },
