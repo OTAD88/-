@@ -196,3 +196,50 @@ assert "handleStart" not in diagnostics and "ModeChip" not in diagnostics
 assert "FadeInDown" in read("app/(tabs)/chats.tsx")
 assert "FadeInUp" in read("app/chat/[id].tsx")
 print("Jesr patch complete.")
+
+# Restore Jesr's approved olive-and-ivory visual palette.
+p = "lib/jesr/palette.ts"
+s = read(p)
+s = require_replace(
+    s,
+    '''export const sage = {
+  bg: "#9BB59F", bgDark: "#7E9A83", card: "#FFFFFF", chip: "#A5BBA8", text: "#5F7F66",
+  textSoft: "#93AB98", bubbleIn: "#FFFFFF", bubbleOut: "#EAEAEA", bubbleText: "#4D6A54", page: "#EDEDED",
+};''',
+    '''export const sage = {
+  bg: "#71866B", bgDark: "#5E7258", card: "#F8F7F0", chip: "#DCE4D6", text: "#303B31",
+  textSoft: "#858B80", bubbleIn: "#F8F7F0", bubbleOut: "#DCE4D6", bubbleText: "#303B31", page: "#F1F0E8",
+};''',
+    p + " approved palette"
+)
+write(p, s)
+
+# Use the ivory page background while retaining olive headers and accents.
+p = "app/(tabs)/chats.tsx"
+s = read(p)
+s = require_replace(
+    s,
+    'page: { flex: 1, backgroundColor: sage.bg }, top: { backgroundColor: sage.bg, paddingBottom: 16 },',
+    'page: { flex: 1, backgroundColor: sage.page }, top: { backgroundColor: sage.bg, paddingBottom: 16 },',
+    p + " page background"
+)
+write(p, s)
+
+p = "app/(tabs)/me.tsx"
+s = read(p)
+s = require_replace(
+    s,
+    '<SafeAreaView style={{ flex: 1, backgroundColor: sage.bg }} edges={["top"]}>',
+    '<SafeAreaView style={{ flex: 1, backgroundColor: sage.page }} edges={["top"]}>',
+    p + " page background"
+)
+write(p, s)
+
+p = "app/chat/[id].tsx"
+s = read(p)
+s = require_replace(s, 'body: { flex: 1, backgroundColor: sage.bg,', 'body: { flex: 1, backgroundColor: sage.page,', p + " chat background")
+s = require_replace(s, 'day: { color: "#fff",', 'day: { color: sage.text,', p + " day label")
+s = require_replace(s, 'placeholderTextColor="#E6EEE7"', 'placeholderTextColor={sage.textSoft}', p + " input placeholder")
+s = require_replace(s, 'input: { flex: 1, color: "#fff",', 'input: { flex: 1, color: sage.text,', p + " input text")
+s = require_replace(s, 'send: { color: "#fff",', 'send: { color: sage.bgDark,', p + " send icon")
+write(p, s)
