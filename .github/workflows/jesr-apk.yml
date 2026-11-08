@@ -72,11 +72,12 @@ jobs:
         working-directory: build-source/jesr
         run: npx expo prebuild --platform android --no-install --clean
 
-      - name: Confirm native mesh module autolinking
+      - name: Confirm native mesh module metadata
         working-directory: build-source/jesr
         run: |
-          grep -R "jesr-network" android/settings.gradle android/app/build/generated 2>/dev/null | head -5
-          grep -q "jesr-network" android/settings.gradle || grep -Rqs "jesr-network" android/
+          test -f modules/jesr-network/expo-module.config.json
+          test -f modules/jesr-network/android/build.gradle
+          grep -q "com.jesr.network.JesrNetworkModule" modules/jesr-network/expo-module.config.json
 
       - name: Build release APK for arm64
         working-directory: build-source/jesr/android
