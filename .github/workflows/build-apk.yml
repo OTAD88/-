@@ -105,7 +105,7 @@ jobs:
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: جسر-2.9-Android-APK
+          name: جسر-2.10-Android-APK
           path: |
             جسر-2.10.apk
             apk-sha256.txt
