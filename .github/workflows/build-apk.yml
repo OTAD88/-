@@ -1,5 +1,9 @@
 name: Build Jesr Android APK
 
+concurrency:
+  group: jesr-android-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
   push:
