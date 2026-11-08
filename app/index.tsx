@@ -40,7 +40,7 @@ type Palette = {
   primaryText: string; text: string; muted: string; border: string; subtle: string;
   chat: string; bubbleIn: string; bubbleOut: string; bubbleText: string; input: string;
 };
-const ORIGINAL = "#5B6654";
+const ORIGINAL = "#71866B";
 const THEME_MODE_KEY = "jesr_theme_mode";
 const ACCENT_KEY = "jesr_accent_color";
 const SAVED_COLORS_KEY = "jesr_saved_colors";
@@ -102,12 +102,12 @@ function makePalette(mode: ThemeMode, accent: string, systemDark: boolean): Pale
       };
     }
     return {
-      page: mix(accent, "#FFFFFF", 0.82), top: accent, surface: "#FFFFFF",
-      surfaceAlt: mix(accent, "#FFFFFF", 0.9), primary: accent, primaryText: onAccent,
-      text: "#212529", muted: mix(accent, "#212529", 0.42), border: mix(accent, "#A3ADB2", 0.55),
-      subtle: mix(accent, "#FFFFFF", 0.72), chat: accent,
-      bubbleIn: "#FFFFFF", bubbleOut: mix(accent, "#FFFFFF", 0.73),
-      bubbleText: "#212529", input: mix(accent, "#FFFFFF", 0.76),
+      page: mix(accent, "#F1F0E8", 0.18), top: accent, surface: "#F8F7F0",
+      surfaceAlt: mix(accent, "#DCE4D6", 0.9), primary: accent, primaryText: onAccent,
+      text: "#303B31", muted: "#858B80", border: mix(accent, "#858B80", 0.72),
+      subtle: mix(accent, "#F1F0E8", 0.72), chat: "#F1F0E8",
+      bubbleIn: "#F8F7F0", bubbleOut: mix(accent, "#F1F0E8", 0.73),
+      bubbleText: "#303B31", input: mix(accent, "#F1F0E8", 0.76),
     };
   }
   if (dark) {
@@ -119,10 +119,10 @@ function makePalette(mode: ThemeMode, accent: string, systemDark: boolean): Pale
     };
   }
   return {
-    page: "#A3ADB2", top: ORIGINAL, surface: "#FFFFFF", surfaceAlt: "#F5F7F6",
-    primary: ORIGINAL, primaryText: "#FFFFFF", text: "#212529", muted: "#5F6B63",
-    border: "#D0D7DC", subtle: "#D0D7DC", chat: ORIGINAL,
-    bubbleIn: "#FFFFFF", bubbleOut: "#D0D7DC", bubbleText: "#212529", input: "#D0D7DC",
+    page: "#F1F0E8", top: ORIGINAL, surface: "#F8F7F0", surfaceAlt: "#DCE4D6",
+    primary: ORIGINAL, primaryText: "#FFFFFF", text: "#303B31", muted: "#858B80",
+    border: "#D7D9CF", subtle: "#E5E6DC", chat: "#F1F0E8",
+    bubbleIn: "#F8F7F0", bubbleOut: "#DCE4D6", bubbleText: "#303B31", input: "#E5E6DC",
   };
 }
 async function requestNearbyPermissions() {
