@@ -205,6 +205,7 @@ export default function HomeScreen() {
   const [themeMode, setThemeMode] = useState<ThemeMode>("light");
   const [accent, setAccent] = useState(ORIGINAL);
   const [savedColors, setSavedColors] = useState<SavedColor[]>([ORIGINAL_COLOR]);
+  const [hexDraft, setHexDraft] = useState(ORIGINAL);
   const [themeLoaded, setThemeLoaded] = useState(false);
 
   const currentName = api.profile.name && api.profile.name !== "…" && name === "مستخدم جسر" ? api.profile.name : name;
@@ -219,7 +220,11 @@ export default function HomeScreen() {
       if (values[THEME_MODE_KEY] === "auto" || values[THEME_MODE_KEY] === "light" || values[THEME_MODE_KEY] === "dark" || values[THEME_MODE_KEY] === "custom") {
         setThemeMode(values[THEME_MODE_KEY] as ThemeMode);
       }
-      if (values[ACCENT_KEY] && /^#[0-9A-Fa-f]{6}$/.test(values[ACCENT_KEY])) setAccent(values[ACCENT_KEY].toUpperCase());
+      if (values[ACCENT_KEY] && /^#[0-9A-Fa-f]{6}$/.test(values[ACCENT_KEY])) {
+        const savedAccent = values[ACCENT_KEY].toUpperCase();
+        setAccent(savedAccent);
+        setHexDraft(savedAccent);
+      }
       if (values[SAVED_COLORS_KEY]) {
         try {
           const parsed = JSON.parse(values[SAVED_COLORS_KEY]) as SavedColor[];
@@ -334,8 +339,20 @@ export default function HomeScreen() {
     setSavedColors(next);
   }
 
+  function updateAccent(value: string) {
+    const normalized = value.toUpperCase();
+    setAccent(normalized);
+    setHexDraft(normalized);
+  }
+
+  function changeHexDraft(value: string) {
+    const normalized = (value.startsWith("#") ? value : "#" + value).toUpperCase().slice(0, 7);
+    setHexDraft(normalized);
+    if (/^#[0-9A-F]{6}$/.test(normalized)) setAccent(normalized);
+  }
+
   function chooseSavedColor(item: SavedColor) {
-    setAccent(item.hex);
+    updateAccent(item.hex);
     setThemeMode("custom");
   }
 
@@ -400,7 +417,19 @@ export default function HomeScreen() {
                 <Text style={[styles.statusText, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>{networkLabel}</Text>
               </View>
             </View>
-            <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>المحادثات</Text>
+            <View style={styles.headerTitleRow}>
+              <Text style={[styles.headerTitle, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>{tab === "chats" ? "المحادثات" : "حسابي"}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tab === "chats" ? "فتح الملف الشخصي" : "العودة إلى المحادثات"}
+                onPress={() => setTab((current) => current === "chats" ? "profile" : "chats")}
+                style={styles.headerProfileButton}
+              >
+                <Text style={[styles.headerProfileButtonText, { color: luminance(stylesColor.top) < 0.45 ? "#FFFFFF" : "#212529" }]}>
+                  {tab === "chats" ? "حسابي" : "المحادثات"}
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={[styles.sheet, { backgroundColor: stylesColor.surface }]}>
@@ -502,8 +531,8 @@ export default function HomeScreen() {
       )}
 
       <Modal visible={addOpen} animationType="slide" transparent onRequestClose={() => setAddOpen(false)}>
-        <View style={styles.backdrop}>
-          <View style={[styles.sheetModal, { backgroundColor: stylesColor.surface }]}>
+        <Pressable style={styles.backdrop} onPress={() => setAddOpen(false)}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={[styles.sheetModal, { backgroundColor: stylesColor.surface }]}>
             <Text style={[styles.modalTitle, { color: stylesColor.text }]}>إضافة صديق</Text>
             <Text style={[styles.modalHint, { color: stylesColor.muted }]}>اختر طريقة الإضافة المتاحة حاليًا. اكتشاف الأجهزة القريبة يعمل تلقائيًا في الخلفية.</Text>
             <View style={styles.methodRow}>
@@ -528,11 +557,11 @@ export default function HomeScreen() {
                 style={{ maxHeight: 240 }}
                 ListEmptyComponent={<Text style={[styles.modalHint, { color: stylesColor.muted }]}>لا توجد أجهزة مكتشفة حاليًا. يواصل جسر البحث تلقائيًا.</Text>}
                 renderItem={({ item }) => (
-                  <Pressable onPress={() => void submitFriendById(item.id)} style={[styles.nearbyRow, { borderBottomColor: stylesColor.border }]}>
+                  <Pressable onPress={() => Alert.alert("الجهاز مكتشف", "المعرّف الظاهر هنا خاص باتصال الشبكة، وليس معرّف حساب جسر. اطلب من صاحب الهاتف مشاركة معرّف جسر، ثم أضِفه من خيار «بالمعرّف».")} style={[styles.nearbyRow, { borderBottomColor: stylesColor.border }]}>
                     <View style={[styles.avatar, { backgroundColor: stylesColor.primary }]}><Text style={[styles.avatarLetter, { color: stylesColor.primaryText }]}>ج</Text></View>
                     <View style={styles.flex}>
                       <Text style={[styles.contactName, { color: stylesColor.text }]}>{item.id}</Text>
-                      <Text style={[styles.preview, { color: stylesColor.muted }]}>{item.connected ? "متصل" : "تم اكتشافه"}</Text>
+                      <Text style={[styles.preview, { color: stylesColor.muted }]}>{item.connected ? "متصل · يلزم معرّف جسر" : "جهاز مكتشف · يلزم معرّف جسر"}</Text>
                     </View>
                     <Text style={[styles.nearbyAction, { color: stylesColor.primary }]}>إضافة</Text>
                   </Pressable>
@@ -542,13 +571,13 @@ export default function HomeScreen() {
             <Pressable onPress={() => setAddOpen(false)} style={[styles.secondaryWide, { borderColor: stylesColor.border }]}>
               <Text style={{ color: stylesColor.text }}>إغلاق</Text>
             </Pressable>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal visible={themeOpen} animationType="slide" transparent onRequestClose={() => setThemeOpen(false)}>
-        <View style={styles.backdrop}>
-          <View style={[styles.themeSheet, { backgroundColor: stylesColor.surface }]}>
+        <Pressable style={styles.backdrop} onPress={() => setThemeOpen(false)}>
+          <Pressable onPress={(event) => event.stopPropagation()} style={[styles.themeSheet, { backgroundColor: stylesColor.surface }]}>
             <Text style={[styles.modalTitle, { color: stylesColor.text }]}>المظهر والألوان</Text>
             <Text style={[styles.modalHint, { color: stylesColor.muted }]}>أربعة اختيارات، مع الاحتفاظ بالثيم الأصلي وإتاحة ألوانك الخاصة.</Text>
             <View style={styles.themeModes}>
@@ -566,8 +595,18 @@ export default function HomeScreen() {
             {themeMode === "custom" && (
               <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.colorPickerContent}>
                 <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>اختر اللون من العجلة</Text>
-                <ColorWheel value={accent} onChange={setAccent} />
-                <Text style={[styles.hexValue, { color: stylesColor.text }]}>{accent.toUpperCase()}</Text>
+                <ColorWheel value={accent} onChange={updateAccent} />
+                <TextInput
+                  value={hexDraft}
+                  onChangeText={changeHexDraft}
+                  maxLength={7}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  placeholder="#RRGGBB"
+                  placeholderTextColor={stylesColor.muted}
+                  accessibilityLabel="قيمة اللون بصيغة HEX"
+                  style={[styles.hexValue, { color: stylesColor.text, backgroundColor: stylesColor.input, borderColor: stylesColor.border, borderWidth: 1, borderRadius: 10, minWidth: 140, paddingHorizontal: 14, paddingVertical: 8, textAlign: "center" }]}
+                />
                 <View style={styles.savedHeader}>
                   <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>الألوان المحفوظة</Text>
                   <Pressable accessibilityRole="button" accessibilityLabel="حفظ اللون الحالي" onPress={saveCurrentColor} style={[styles.saveColorButton, { backgroundColor: stylesColor.primary }]}>
@@ -592,8 +631,8 @@ export default function HomeScreen() {
             <Pressable onPress={() => setThemeOpen(false)} style={[styles.primaryWide, { backgroundColor: stylesColor.primary }]}>
               <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>تم</Text>
             </Pressable>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
     </SafeAreaView>
   );
@@ -611,6 +650,8 @@ const styles = StyleSheet.create({
   statusText: { color: "#FFFFFF", fontSize: 11, fontWeight: "700" },
   headerTitleRow: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 18 },
   headerTitle: { color: "#FFFFFF", fontSize: 19, fontWeight: "700", textAlign: "right" },
+  headerProfileButton: { borderWidth: 1, borderColor: "rgba(255,255,255,0.55)", borderRadius: 15, paddingHorizontal: 12, paddingVertical: 7 },
+  headerProfileButtonText: { fontSize: 12, fontWeight: "700" },
   addButton: { width: 40, height: 40, borderRadius: 22, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.8)", alignItems: "center", justifyContent: "center" },
   addButtonText: { fontSize: 28, lineHeight: 31, fontWeight: "300" },
   sheet: { flex: 1, marginTop: -1, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 },
