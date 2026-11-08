@@ -173,9 +173,9 @@ write(p, s)
 p = "app/(tabs)/me.tsx"
 s = read(p)
 s = require_replace(s, 'import { useState } from "react";', 'import { useState } from "react";\nimport Animated, { FadeInDown } from "react-native-reanimated";', p)
-s = require_replace(s, '<View style={s.card}>', '<Animated.View entering={FadeInDown.delay(60).duration(300)} style={s.card}>', p + " first card")
-s = require_replace(s, '</View>\n        <View style={s.card}>', '</Animated.View>\n        <Animated.View entering={FadeInDown.delay(130).duration(300)} style={s.card}>', p + " second card")
-s = require_replace(s, '</View>\n        <View style={s.card}>', '</Animated.View>\n        <Animated.View entering={FadeInDown.delay(200).duration(300)} style={s.card}>', p + " third card")
+s = s.replace('<View style={s.card}>', '<Animated.View entering={FadeInDown.delay(60).duration(300)} style={s.card}>', 1)
+s = s.replace('</View>\n        <View style={s.card}>', '</Animated.View>\n        <Animated.View entering={FadeInDown.delay(130).duration(300)} style={s.card}>', 1)
+s = s.replace('</View>\n        <View style={s.card}>', '</Animated.View>\n        <Animated.View entering={FadeInDown.delay(200).duration(300)} style={s.card}>', 1)
 s = require_replace(s, '</View>\n      </ScrollView>', '</Animated.View>\n      </ScrollView>', p + " cards close")
 write(p, s)
 
