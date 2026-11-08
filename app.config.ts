@@ -38,7 +38,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "2.9",
+  version: "2.10",
   orientation: "portrait",
   icon: "./icon.png",
   scheme: env.scheme,
@@ -59,7 +59,7 @@ const config: ExpoConfig = {
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    versionCode: 29,
+    versionCode: 30,
     permissions: ["POST_NOTIFICATIONS"],
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
@@ -93,7 +93,7 @@ const config: ExpoConfig = {
       "expo-build-properties",
       {
         android: {
-          buildArchs: ["arm64-v8a"],
+          buildArchs: ["arm64-v8a", "armeabi-v7a", "x86_64"],
           minSdkVersion: 24,
         },
       },
