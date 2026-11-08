@@ -54,19 +54,48 @@ export type OpenResult =
 
 export const MAX_SKEW_MS = 7 * 24 * 3600 * 1000;
 
-/** Validate shape, ID↔key binding, signature, then decrypt (msg only). */
+/** Validate shape, identity binding, signature, then decrypt (msg only). */
 export async function openEnvelope(c: CryptoProvider, selfId: string, env: Envelope, now: number): Promise<OpenResult> {
-  if (!env || env.v !== 1 || typeof env.sig !== "string" || typeof env.fromPub !== "string") return { ok: false, reason: "bad-shape" };
+  const validTypes: readonly string[] = ["friend-request", "friend-accept", "friend-reject", "msg", "ack"];
+  const validCore =
+    typeof env?.id === "string" && env.id.length > 0 && env.id.length <= 128 &&
+    typeof env.from === "string" && env.from.length > 0 && env.from.length <= 128 &&
+    typeof env.to === "string" && env.to.length > 0 && env.to.length <= 128 &&
+    Number.isSafeInteger(env.ts) && env.ts > 0;
+  const validPayload =
+    env?.type === "msg" ? typeof env.ct === "string" && env.ct.length > 0 :
+    env?.type === "ack" ? typeof env.ref === "string" && env.ref.length > 0 :
+    true;
+
+  if (
+    !env || env.v !== 1 || !validTypes.includes(env.type) ||
+    typeof env.sig !== "string" || env.sig.length === 0 ||
+    typeof env.fromPub !== "string" || env.fromPub.length === 0 ||
+    !validCore || !validPayload ||
+    (env.fromName !== undefined && typeof env.fromName !== "string")
+  ) return { ok: false, reason: "bad-shape" };
+
   if (env.to !== selfId) return { ok: false, reason: "not-for-me" };
   if (Math.abs(now - env.ts) > MAX_SKEW_MS) return { ok: false, reason: "stale" };
+
   let pub: Uint8Array;
-  try { pub = fromBase64(env.fromPub); } catch { return { ok: false, reason: "bad-shape" }; }
+  let signature: Uint8Array;
+  try {
+    pub = fromBase64(env.fromPub);
+    signature = fromBase64(env.sig);
+  } catch {
+    return { ok: false, reason: "bad-shape" };
+  }
   if ((await deriveJesrId(c, pub)) !== env.from) return { ok: false, reason: "id-key-mismatch" };
+
   const { sig, ...rest } = env;
-  if (!(await c.verify(pub, canonical(rest), fromBase64(sig)))) return { ok: false, reason: "bad-signature" };
+  let signatureValid = false;
+  try { signatureValid = await c.verify(pub, canonical(rest), signature); } catch { signatureValid = false; }
+  if (!signatureValid) return { ok: false, reason: "bad-signature" };
+
   if (env.type !== "msg") return { ok: true, env };
   try {
-    const pt = await c.decrypt(pub, fromBase64(env.ct ?? ""), aadOf(env.id, env.from, env.to));
+    const pt = await c.decrypt(pub, fromBase64(env.ct), aadOf(env.id, env.from, env.to));
     return { ok: true, env, plaintext: fromUtf8(pt) };
   } catch { return { ok: false, reason: "decrypt-failed" }; }
 }
