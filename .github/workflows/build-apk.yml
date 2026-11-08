@@ -11,6 +11,7 @@ on:
       - main
       - fix/jesr-apk-build
       - release/jesr-2.9
+      - feature/jesr-2.10-brand-compat
 
 permissions:
   contents: read
@@ -75,9 +76,9 @@ jobs:
           grep -q "jesr-network" autolinking.json
           grep -q "JesrNetworkModule" autolinking.json
 
-      - name: Build release APK (arm64-v8a)
+      - name: Build release APK (ARM64, ARMv7, x86_64)
         working-directory: android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64 --no-daemon --stacktrace
 
       - name: Verify APK
         shell: bash
@@ -85,26 +86,27 @@ jobs:
           set -euo pipefail
           APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
-          cp "$APK" 'جسر-2.9.apk'
+          cp "$APK" 'جسر-2.10.apk'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/apksigner" verify --verbose 'جسر-2.9.apk'
-          "$BT/aapt2" dump badging 'جسر-2.9.apk' | tee badging.txt
-          grep -q "versionName='2.9'" badging.txt
-          grep -q "versionCode='29'" badging.txt
+          "$BT/apksigner" verify --verbose 'جسر-2.10.apk'
+          "$BT/aapt2" dump badging 'جسر-2.10.apk' | tee badging.txt
+          grep -q "versionName='2.10'" badging.txt
+          grep -q "versionCode='30'" badging.txt
           grep -q "application-label:'جسر'" badging.txt
-          unzip -l 'جسر-2.9.apk' > apk-files.txt
-          grep -q "lib/arm64-v8a/" apk-files.txt
-          grep -q "lib/arm64-v8a/libsodium.so" apk-files.txt
-          grep -q "lib/arm64-v8a/libjnidispatch.so" apk-files.txt
-          ! grep -q "lib/armeabi-v7a/" apk-files.txt
-          sha256sum 'جسر-2.9.apk' | tee apk-sha256.txt
-          ls -lh 'جسر-2.9.apk'
+          unzip -l 'جسر-2.10.apk' > apk-files.txt
+          for ABI in arm64-v8a armeabi-v7a x86_64; do
+            grep -q "lib/$ABI/" apk-files.txt
+            grep -q "lib/$ABI/libsodium.so" apk-files.txt
+            grep -q "lib/$ABI/libjnidispatch.so" apk-files.txt
+          done
+          sha256sum 'جسر-2.10.apk' | tee apk-sha256.txt
+          ls -lh 'جسر-2.10.apk'
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
           name: جسر-2.9-Android-APK
           path: |
-            جسر-2.9.apk
+            جسر-2.10.apk
             apk-sha256.txt
           if-no-files-found: error
