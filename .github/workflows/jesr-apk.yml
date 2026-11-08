@@ -56,9 +56,13 @@ jobs:
         working-directory: build-source/jesr
         run: pnpm install --frozen-lockfile
 
-      - name: Run source tests
+      - name: Run Vitest suites
         working-directory: build-source/jesr
-        run: CI=1 pnpm test
+        run: pnpm exec vitest run tests/mesh/router.test.ts tests/mesh/simulation.test.ts tests/cors.test.ts tests/auth.logout.test.ts
+
+      - name: Run Node test suites
+        working-directory: build-source/jesr
+        run: node --import tsx --test tests/jesr/engine.test.ts tests/jesr/mesh-integration.test.ts
 
       - name: TypeScript validation
         working-directory: build-source/jesr
