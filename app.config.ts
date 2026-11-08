@@ -38,7 +38,7 @@ const env = {
 const config: ExpoConfig = {
   name: env.appName,
   slug: env.appSlug,
-  version: "1.8.0",
+  version: "2.9",
   orientation: "portrait",
   icon: "./icon.png",
   scheme: env.scheme,
@@ -59,7 +59,7 @@ const config: ExpoConfig = {
     },
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    versionCode: 8,
+    versionCode: 29,
     permissions: ["POST_NOTIFICATIONS"],
     blockedPermissions: [
       "android.permission.READ_EXTERNAL_STORAGE",
