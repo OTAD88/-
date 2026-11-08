@@ -95,7 +95,7 @@ export async function openEnvelope(c: CryptoProvider, selfId: string, env: Envel
 
   if (env.type !== "msg") return { ok: true, env };
   try {
-    const pt = await c.decrypt(pub, fromBase64(env.ct), aadOf(env.id, env.from, env.to));
+    const pt = await c.decrypt(pub, fromBase64(env.ct ?? ""), aadOf(env.id, env.from, env.to));
     return { ok: true, env, plaintext: fromUtf8(pt) };
   } catch { return { ok: false, reason: "decrypt-failed" }; }
 }
