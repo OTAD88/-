@@ -1,0 +1,105 @@
+name: Build Jesr Android APK
+
+on:
+  push:
+    branches: [auto-network-apk]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Unpack complete application source
+        run: |
+          test -s jesr-1.8.0-source.zip
+          unzip -q jesr-1.8.0-source.zip -d build-source
+          test -f build-source/jesr/app/_layout.tsx
+          test -f build-source/jesr/modules/jesr-network/android/build.gradle
+
+      - name: Apply requested fixes and motion
+        run: python3 ci/prepare_source.py build-source/jesr
+
+      - name: Install JavaScript dependencies
+        working-directory: build-source/jesr
+        run: pnpm install --frozen-lockfile
+
+      - name: Run source tests
+        working-directory: build-source/jesr
+        run: CI=1 pnpm test
+
+      - name: TypeScript validation
+        working-directory: build-source/jesr
+        run: pnpm check
+
+      - name: Generate Android project
+        working-directory: build-source/jesr
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Confirm native mesh module autolinking
+        working-directory: build-source/jesr
+        run: |
+          grep -R "jesr-network" android/settings.gradle android/app/build/generated 2>/dev/null | head -5
+          grep -q "jesr-network" android/settings.gradle || grep -Rqs "jesr-network" android/
+
+      - name: Build release APK for arm64
+        working-directory: build-source/jesr/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon --stacktrace
+
+      - name: Verify APK
+        working-directory: build-source/jesr
+        run: |
+          set -euo pipefail
+          APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$APK"
+          cp "$APK" Jesr-1.8.0-auto-network-arm64.apk
+          BT="$ANDROID_HOME/build-tools/36.0.0"
+          "$BT/apksigner" verify --verbose Jesr-1.8.0-auto-network-arm64.apk
+          "$BT/aapt" dump badging Jesr-1.8.0-auto-network-arm64.apk | tee badging.txt | head -8
+          grep -q "versionName='1.8.0'" badging.txt
+          grep -q "package: name='space.manus.jesrmesh.t174174124018906'" badging.txt
+          unzip -l Jesr-1.8.0-auto-network-arm64.apk > apk-files.txt
+          grep -q "lib/arm64-v8a/libsodium.so" apk-files.txt
+          ! grep -q "lib/armeabi-v7a/" apk-files.txt
+          sha256sum Jesr-1.8.0-auto-network-arm64.apk | tee apk-sha256.txt
+          ls -lh Jesr-1.8.0-auto-network-arm64.apk
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-1.8.0-auto-network-arm64
+          path: |
+            build-source/jesr/Jesr-1.8.0-auto-network-arm64.apk
+            build-source/jesr/apk-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
