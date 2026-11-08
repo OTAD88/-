@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -186,7 +187,7 @@ export default function HomeScreen() {
   const api = useJesr();
   const systemScheme = useColorScheme();
   const systemDark = systemScheme === "dark";
-  const autoStarted = useRef(false);
+  const startInFlight = useRef(false);
   const [tab, setTab] = useState<"chats" | "profile">("chats");
   const [peer, setPeer] = useState<string | null>(null);
   const [requestTab, setRequestTab] = useState(false);
@@ -253,22 +254,37 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
-    if (!isJesrNativeAvailable || !api.ready || autoStarted.current) return;
-    autoStarted.current = true;
+    if (!isJesrNativeAvailable || !api.ready) return;
     let alive = true;
-    const begin = async () => {
+    const ensureNetwork = async () => {
+      if (startInFlight.current) return;
+      startInFlight.current = true;
       try {
-        await requestNearbyPermissions();
-        if (!alive) return;
-        const snapshot = await getMeshSnapshot();
-        if (!snapshot.active) await startMesh("balanced");
-        if (alive) await discoverMeshPeers();
+        let snapshot = await getMeshSnapshot();
+        if (!snapshot.active) {
+          await requestNearbyPermissions();
+          if (!alive) return;
+          snapshot = await getMeshSnapshot();
+          if (!snapshot.active) await startMesh("balanced");
+        }
+        if (alive) {
+          setNetworkError("");
+          await discoverMeshPeers();
+        }
       } catch (error) {
         if (alive) setNetworkError(error instanceof Error ? error.message : "تعذر بدء الشبكة تلقائيًا.");
+      } finally {
+        startInFlight.current = false;
       }
     };
-    void begin();
-    return () => { alive = false; };
+    void ensureNetwork();
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void ensureNetwork();
+    });
+    return () => {
+      alive = false;
+      appStateSub.remove();
+    };
   }, [api.ready]);
 
   const stylesColor = colors;
