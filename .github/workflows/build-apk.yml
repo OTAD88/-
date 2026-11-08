@@ -56,6 +56,9 @@ jobs:
       - name: TypeScript validation
         run: pnpm check
 
+      - name: Unit tests
+        run: pnpm test
+
       - name: ESLint validation
         run: pnpm lint
 
@@ -88,6 +91,7 @@ jobs:
           unzip -l 'جسر-2.9.apk' > apk-files.txt
           grep -q "lib/arm64-v8a/" apk-files.txt
           grep -q "lib/arm64-v8a/libsodium.so" apk-files.txt
+          grep -q "lib/arm64-v8a/libjnidispatch.so" apk-files.txt
           ! grep -q "lib/armeabi-v7a/" apk-files.txt
           sha256sum 'جسر-2.9.apk' | tee apk-sha256.txt
           ls -lh 'جسر-2.9.apk'
