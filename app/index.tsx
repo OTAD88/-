@@ -20,7 +20,7 @@ import {
   type Permission,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Circle, Path, Rect, Text as SvgText } from "react-native-svg";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useJesr } from "@/lib/jesr/runtime";
 import { MAX_TEXT_CHARS } from "@/lib/jesr/engine";
@@ -518,6 +518,16 @@ export default function HomeScreen() {
                 <View style={[styles.profileCard, { backgroundColor: stylesColor.surfaceAlt, borderColor: stylesColor.border }]}>
                   <Text style={[styles.cardTitle, { color: stylesColor.text }]}>حالة الشبكة</Text>
                   <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>{api.meshActive ? "الشبكة المحلية تعمل ويجري اكتشاف الأجهزة تلقائيًا." : isJesrNativeAvailable ? "يحاول جسر بدء الشبكة تلقائيًا عند فتح التطبيق." : "المعاينة لا تتصل بالأجهزة الحقيقية."}</Text>
+                </View>
+                <View style={[styles.profileCard, { backgroundColor: stylesColor.surfaceAlt, borderColor: stylesColor.border, alignItems: "center" }]}>
+                  <Text style={[styles.cardTitle, { color: stylesColor.text, alignSelf: "stretch" }]}>حقوق المطوّر</Text>
+                  <Svg width={260} height={76} viewBox="0 0 260 76">
+                    <Rect x={2} y={2} width={256} height={72} rx={18} fill={stylesColor.surface} stroke={stylesColor.border} strokeWidth={1.5} />
+                    <Circle cx={39} cy={38} r={23} fill={stylesColor.primary} />
+                    <Path d="M39 19 L39 45 C39 52 30 55 26 49 C22 42 31 36 39 40 M39 24 C45 29 49 29 54 29" fill="none" stroke={stylesColor.primaryText} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" />
+                    <SvgText x={151} y={46} fontSize={25} fontWeight="800" letterSpacing={1.1} textAnchor="middle" fill={stylesColor.text}>@OTAD_88</SvgText>
+                  </Svg>
+                  <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>العلامة المدمجة للنسخة الأصلية من جسر</Text>
                 </View>
               </ScrollView>
             )}
