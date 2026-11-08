@@ -206,6 +206,8 @@ export default function HomeScreen() {
   const [savedColors, setSavedColors] = useState<SavedColor[]>([ORIGINAL_COLOR]);
   const [themeLoaded, setThemeLoaded] = useState(false);
 
+  const currentName = api.profile.name && api.profile.name !== "…" && name === "مستخدم جسر" ? api.profile.name : name;
+
   const colors = useMemo(() => makePalette(themeMode, accent, systemDark), [themeMode, accent, systemDark]);
 
   useEffect(() => {
@@ -238,10 +240,6 @@ export default function HomeScreen() {
       [SAVED_COLORS_KEY, JSON.stringify(savedColors)],
     ]);
   }, [themeLoaded, themeMode, accent, savedColors]);
-
-  useEffect(() => {
-    if (api.profile.name && api.profile.name !== "…") setName(api.profile.name);
-  }, [api.profile.name]);
 
   useEffect(() => {
     if (!isJesrNativeAvailable) return;
@@ -309,7 +307,7 @@ export default function HomeScreen() {
 
   async function saveName() {
     if (!api.ready) return;
-    try { await api.setName(name); await AsyncStorage.setItem("jesr_display_name", name); Alert.alert("الحساب", "تم حفظ الاسم."); }
+    try { await api.setName(currentName); await AsyncStorage.setItem("jesr_display_name", currentName); Alert.alert("الحساب", "تم حفظ الاسم."); }
     catch (error) { Alert.alert("الحساب", error instanceof Error ? error.message : "تعذر حفظ الاسم."); }
   }
 
@@ -460,7 +458,7 @@ export default function HomeScreen() {
                     <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>مشاركة المعرّف</Text>
                   </Pressable>
                   <Text style={[styles.profileLabel, { color: stylesColor.muted }]}>اسم العرض</Text>
-                  <TextInput value={name} onChangeText={setName} maxLength={30} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} textAlign="right" />
+                  <TextInput value={currentName} onChangeText={setName} maxLength={30} style={[styles.profileInput, { color: stylesColor.text, backgroundColor: stylesColor.input }]} textAlign="right" />
                   <Pressable onPress={() => void saveName()} disabled={!api.ready} style={[styles.primaryWide, { backgroundColor: stylesColor.primary, opacity: api.ready ? 1 : 0.5 }]}>
                     <Text style={{ color: stylesColor.primaryText, fontWeight: "700" }}>حفظ الاسم</Text>
                   </Pressable>
