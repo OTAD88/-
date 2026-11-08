@@ -47,9 +47,9 @@
 3. `pnpm test` لاختبارات الهوية والبروتوكول.
 4. `pnpm lint` لفحص ESLint.
 5. Expo Prebuild والتحقق من ربط `jesr-network` و`JesrNetworkModule`.
-6. Gradle Release APK بمعمارية `arm64-v8a وarmeabi-v7a وx86_64`.
-7. التحقق من توقيع APK واسم «جسر» و`versionName=2.9` و`versionCode=29` ووجود مكتبات libsodium وJNA.
-8. رفع artifact باسم `جسر-2.9-Android-APK` عند نجاح جميع الخطوات.
+6. Gradle Release APK بمعمارية `arm64-v8a وarmeabi-v7a وx86_64 وarmeabi-v7a وx86_64`.
+7. التحقق من توقيع APK واسم «جسر» و`versionName=2.10` و`versionCode=30` ووجود مكتبات libsodium وJNA.
+8. رفع artifact باسم `جسر-2.10-Android-APK` عند نجاح جميع الخطوات.
 
 **لا تعتبر APK جاهزًا إلا عندما يكون تشغيل Actions الخاص بآخر commit ناجحًا ويظهر artifact.** نجاح فحوص TypeScript أو الوحدات وحدها لا يثبت نجاح Gradle أو التشغيل على الهاتف.
 
