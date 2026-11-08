@@ -32,8 +32,8 @@
 3. Unit tests.
 4. ESLint.
 5. Expo Prebuild وAndroid native autolinking.
-6. Gradle release APK لـ`arm64-v8a`.
-7. التحقق من توقيع APK واسم الحزمة وversionName وversionCode والاسم العربي ووجود libsodium وARM64.
+6. Gradle release APK متعدد المعماريات لـ`arm64-v8a`, `armeabi-v7a`, و`x86_64`.
+7. التحقق من توقيع APK واسم الحزمة وversionName وversionCode والاسم العربي ووجود libsodium وJNA لكل ABI.
 
 ## ما لا يمكن إثباته دون أجهزة فعلية
 هذه ليست أعمال بناء متبقية في المستودع؛ إنها اختبارات ميدانية على الهواتف:
