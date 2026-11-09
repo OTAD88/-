@@ -120,10 +120,10 @@ function makePalette(mode: ThemeMode, accent: string, systemDark: boolean): Pale
     };
   }
   return {
-    page: "#F1F0E8", top: ORIGINAL, surface: "#F8F7F0", surfaceAlt: "#DCE4D6",
+    page: "#F2F3F5", top: "#F2F3F5", surface: "#FFFFFF", surfaceAlt: "#FFFFFF",
     primary: ORIGINAL, primaryText: "#FFFFFF", text: "#303B31", muted: "#858B80",
-    border: "#D7D9CF", subtle: "#E5E6DC", chat: "#F1F0E8",
-    bubbleIn: "#F8F7F0", bubbleOut: "#DCE4D6", bubbleText: "#303B31", input: "#E5E6DC",
+    border: "#E1E4E8", subtle: "#ECEFF2", chat: "#F2F3F5",
+    bubbleIn: "#FFFFFF", bubbleOut: "#DCE4D6", bubbleText: "#303B31", input: "#ECEFF2",
   };
 }
 async function requestNearbyPermissions() {
