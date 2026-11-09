@@ -50,3 +50,9 @@
 ## ملاحظة الهوية عند الإضافة
 الأجهزة القريبة المكتشفة تعرض Node ID للنقل، وليس Jesr ID للحساب. لذلك لا تُرسل منها طلب صداقة مباشرة؛ يجب أن يشارك صاحب الهاتف Jesr ID الخاص به ثم تتم الإضافة بهذا المعرّف. هذا يمنع خلط هويتين مختلفتين.
 \n## قيد توقيع النسخة الرسمية\nلم يُضبط بعد مفتاح توقيع إصدار خاص وثابت محفوظ خارج المستودع. فحص `apksigner verify` يثبت وجود توقيع APK فقط، ولا يثبت أن الشهادة تعود إلى مالك `@OTAD_88`. يلزم إعداد مفتاح إصدار خاص وسري في GitHub Actions قبل اعتماد التحقق من هوية الناشر.\n
+
+## 2.11 — Light background alignment
+- Updated the light-mode screen background and chat canvas to a neutral very-light gray.
+- Updated the header and content surfaces to light gray/white to match the Figma Light reference.
+- Kept the dark and custom themes unchanged.
+- Android version: 2.11 (versionCode 31); multi-ABI build remains ARM64, ARMv7, and x86_64.
