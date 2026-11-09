@@ -86,27 +86,27 @@ jobs:
           set -euo pipefail
           APK="$(find android/app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
           test -n "$APK"
-          cp "$APK" 'جسر-2.10.apk'
+          cp "$APK" 'جسر-2.11.apk'
           BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
-          "$BT/apksigner" verify --verbose 'جسر-2.10.apk'
-          "$BT/aapt2" dump badging 'جسر-2.10.apk' | tee badging.txt
-          grep -q "versionName='2.10'" badging.txt
-          grep -q "versionCode='30'" badging.txt
+          "$BT/apksigner" verify --verbose 'جسر-2.11.apk'
+          "$BT/aapt2" dump badging 'جسر-2.11.apk' | tee badging.txt
+          grep -q "versionName='2.11'" badging.txt
+          grep -q "versionCode='31'" badging.txt
           grep -q "application-label:'جسر'" badging.txt
-          unzip -l 'جسر-2.10.apk' > apk-files.txt
+          unzip -l 'جسر-2.11.apk' > apk-files.txt
           for ABI in arm64-v8a armeabi-v7a x86_64; do
             grep -q "lib/$ABI/" apk-files.txt
             grep -q "lib/$ABI/libsodium.so" apk-files.txt
             grep -q "lib/$ABI/libjnidispatch.so" apk-files.txt
           done
-          sha256sum 'جسر-2.10.apk' | tee apk-sha256.txt
-          ls -lh 'جسر-2.10.apk'
+          sha256sum 'جسر-2.11.apk' | tee apk-sha256.txt
+          ls -lh 'جسر-2.11.apk'
 
       - name: Upload installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: جسر-2.10-Android-APK
+          name: جسر-2.11-Android-APK
           path: |
-            جسر-2.10.apk
+            جسر-2.11.apk
             apk-sha256.txt
           if-no-files-found: error
