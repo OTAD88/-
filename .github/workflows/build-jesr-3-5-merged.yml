@@ -1,0 +1,93 @@
+name: Build Jesr 3.5 Merged Final
+
+on:
+  push:
+    branches:
+      - jesr-3.5-merged-final
+    paths:
+      - ".github/workflows/build-jesr-3-5-merged.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout merge branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android SDK platforms
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
+
+      - name: Download today's UI-first source archive
+        run: |
+          curl -fL --retry 3 "https://github.com/OTAD88/-/releases/download/je/jesr.zip" -o jesr.zip
+          echo "47a7b90cf6457d806e4d452e7369a591dba41e702c253f5a5af5feaac950d4c2  jesr.zip" | sha256sum -c -
+          mkdir source
+          unzip -q jesr.zip -d source
+
+      - name: Apply verified merge patch
+        run: |
+          base64 -d patches/jesr-3.5-final.patch.xz.b64 > /tmp/jesr-3.5.patch.xz
+          xz -dc /tmp/jesr-3.5.patch.xz > /tmp/jesr-3.5.patch
+          git -C source init -q
+          git -C source apply --check /tmp/jesr-3.5.patch
+          git -C source apply /tmp/jesr-3.5.patch
+          grep -nE 'versionCode|versionName|applicationId' source/app/build.gradle.kts
+          test -f source/app/src/main/java/com/example/JesrApplication.kt
+          test -f source/app/src/main/java/com/example/ui/components/EmailAuthDialog.kt
+
+      - name: Create debug signing key
+        working-directory: source
+        run: |
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Build APK
+        working-directory: source
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Run local unit tests
+        working-directory: source
+        continue-on-error: true
+        run: gradle --no-daemon testDebugUnitTest
+
+      - name: Prepare delivery bundle
+        if: always()
+        run: |
+          mkdir -p delivery
+          cp source/MERGE-REPORT-AR.md delivery/ 2>/dev/null || true
+          cp source/README.md delivery/README-AR.md 2>/dev/null || true
+          if [ -f source/app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp source/app/build/outputs/apk/debug/app-debug.apk delivery/Jesr-3.5-final-debug.apk
+            (cd source && zip -qr ../delivery/Jesr-3.5-final-source.zip . -x ".gradle/*" "app/build/*" "build/*" "debug.keystore")
+          fi
+
+      - name: Upload final build and merged source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-3.5-Merged-Final
+          path: delivery/*
+          if-no-files-found: warn
+          retention-days: 30
