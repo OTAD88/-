@@ -6,6 +6,7 @@ on:
       - jesr-3.5-merged-final
     paths:
       - ".github/workflows/build-jesr-3-5-merged.yml"
+      - "patches/jesr-3.5-final.patch.xz.b64"
   workflow_dispatch:
 
 permissions:
