@@ -1,0 +1,13 @@
+--- a/app/src/main/java/com/example/MainActivity.kt
++++ b/app/src/main/java/com/example/MainActivity.kt
+@@ -287,6 +287,10 @@
+             permissionsToRequest.add(Manifest.permission.BLUETOOTH_SCAN)
+             permissionsToRequest.add(Manifest.permission.BLUETOOTH_ADVERTISE)
+             permissionsToRequest.add(Manifest.permission.BLUETOOTH_CONNECT)
++            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
++                // Android 12/12L still requires location permission for Wi-Fi P2P discovery.
++                permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
++            }
+         } else {
+             permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+             permissionsToRequest.add(Manifest.permission.ACCESS_COARSE_LOCATION)
