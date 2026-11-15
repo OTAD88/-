@@ -1,0 +1,108 @@
+name: Build merged Jesr 3.5 final APK
+
+on:
+  push:
+    branches:
+      - merge-jesr-3-5
+    paths:
+      - ".merge/jesr-3.5-patch.part*.b64"
+      - ".github/workflows/build-jesr-3-5-merged.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout merged branch
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install Android platforms
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
+
+      - name: Download today's UI baseline and verify archive
+        run: |
+          set -euo pipefail
+          curl -fL "https://github.com/OTAD88/-/releases/download/je/jesr.zip" -o /tmp/jesr.zip
+          echo "47a7b90cf6457d806e4d452e7369a591dba41e702c253f5a5af5feaac950d4c2  /tmp/jesr.zip" | sha256sum -c -
+          mkdir source
+          unzip -q /tmp/jesr.zip -d source
+
+      - name: Apply reviewed comparison merge patch
+        run: |
+          set -euo pipefail
+          cat .merge/jesr-3.5-patch.part*.b64 > /tmp/jesr-patch.b64
+          base64 --decode /tmp/jesr-patch.b64 > /tmp/jesr-patch.tar.xz
+          echo "f9d8c590ca89df217b37ae07b2dbf5c07b7dc8625c98d3db8074d15dcb87fd0c  /tmp/jesr-patch.tar.xz" | sha256sum -c -
+          xz --decompress --stdout /tmp/jesr-patch.tar.xz > /tmp/jesr-3.5.patch
+          git -C source init -q
+          git -C source apply --check /tmp/jesr-3.5.patch
+          git -C source apply /tmp/jesr-3.5.patch
+          grep -nE 'versionCode|versionName|compileSdk' source/app/build.gradle.kts
+          test -f source/MERGE_REVIEW_AR.md
+
+      - name: Prepare Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Create CI debug signing key
+        working-directory: source
+        run: |
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Run Android unit and Firestore security tests
+        working-directory: source
+        run: |
+          set -euo pipefail
+          # The source project pins Robolectric to a developer-only Maven cache.
+          # CI uses the regular Maven artifacts instead.
+          sed -i '/robolectric.dependency.dir/d; /robolectric.offline/d' app/build.gradle.kts
+          npm install --global firebase-tools
+          firebase emulators:exec --project demo-no-project --only auth,firestore "gradle --no-daemon testDebugUnitTest"
+
+      - name: Build final debug APK
+        working-directory: source
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Verify APK metadata and signature
+        working-directory: source
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee /tmp/jesr-badging.txt
+          grep -F "package: name='com.aistudio.jesr.mesh' versionCode='36' versionName='3.5'" /tmp/jesr-badging.txt
+
+      - name: Package merged project source
+        run: |
+          cd source
+          zip -qr ../Jesr-3.5-Final-Source.zip . -x '.git/*' '.gradle/*' 'app/build/*' 'build/*' 'debug.keystore'
+
+      - name: Upload final APK, source and merge report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-3.5-FINAL
+          path: |
+            source/app/build/outputs/apk/debug/app-debug.apk
+            Jesr-3.5-Final-Source.zip
+            source/MERGE_REVIEW_AR.md
+          if-no-files-found: error
+          retention-days: 30
