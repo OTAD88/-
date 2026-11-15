@@ -6,6 +6,7 @@ on:
       - merge-jesr-3-5
     paths:
       - ".merge/jesr-3.5-patch.part*.b64"
+      - ".merge/jesr-3.5-permissions.patch"
       - ".github/workflows/build-jesr-3-5-merged.yml"
   workflow_dispatch:
 
@@ -54,6 +55,8 @@ jobs:
           git -C source init -q
           git -C source apply --check /tmp/jesr-3.5.patch
           git -C source apply /tmp/jesr-3.5.patch
+          git -C source apply --check ../.merge/jesr-3.5-permissions.patch
+          git -C source apply ../.merge/jesr-3.5-permissions.patch
           grep -nE 'versionCode|versionName|compileSdk' source/app/build.gradle.kts
           test -f source/MERGE_REVIEW_AR.md
 
