@@ -1,0 +1,92 @@
+--- a/app/src/main/java/com/example/MainActivity.kt
++++ b/app/src/main/java/com/example/MainActivity.kt
+@@ -3,6 +3,7 @@
+ import android.Manifest
+ import android.os.Build
+ import android.os.Bundle
++import android.widget.Toast
+ import androidx.activity.ComponentActivity
+ import androidx.activity.compose.rememberLauncherForActivityResult
+ import androidx.activity.compose.setContent
+@@ -256,9 +257,26 @@
+     val permissionLauncher = rememberLauncherForActivityResult(
+         contract = ActivityResultContracts.RequestMultiplePermissions()
+     ) { permissions ->
+-        val anyGranted = permissions.values.any { it }
+-        if (anyGranted) {
++        val bluetoothReady = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++            permissions[Manifest.permission.BLUETOOTH_SCAN] == true &&
++                permissions[Manifest.permission.BLUETOOTH_ADVERTISE] == true &&
++                permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
++        } else {
++            permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
++        }
++        val wifiReady = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
++            permissions[Manifest.permission.NEARBY_WIFI_DEVICES] == true
++        } else {
++            permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
++        }
++        if (bluetoothReady || wifiReady) {
+             viewModel.startMesh()
++        } else {
++            Toast.makeText(
++                context,
++                "يلزم السماح بالبلوتوث أو أجهزة Wi-Fi القريبة لتشغيل شبكة جسر.",
++                Toast.LENGTH_LONG
++            ).show()
+         }
+     }
+ 
+--- a/app/src/main/java/com/example/data/repository/JesrRepository.kt
++++ b/app/src/main/java/com/example/data/repository/JesrRepository.kt
+@@ -1,6 +1,10 @@
+ package com.example.data.repository
+ 
++import android.Manifest
+ import android.content.Context
++import android.content.pm.PackageManager
++import android.os.Build
++import androidx.core.content.ContextCompat
+ import android.net.Uri
+ import android.util.Log
+ import com.example.crypto.JesrCrypto
+@@ -756,13 +760,36 @@
+         }
+     }
+ 
++    private fun hasRuntimePermission(permission: String): Boolean =
++        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
++
++    private fun canUseBleTransport(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
++        hasRuntimePermission(Manifest.permission.BLUETOOTH_SCAN) &&
++            hasRuntimePermission(Manifest.permission.BLUETOOTH_ADVERTISE) &&
++            hasRuntimePermission(Manifest.permission.BLUETOOTH_CONNECT)
++    } else {
++        hasRuntimePermission(Manifest.permission.ACCESS_FINE_LOCATION)
++    }
++
++    private fun canUseWifiDirectTransport(): Boolean = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
++        hasRuntimePermission(Manifest.permission.NEARBY_WIFI_DEVICES)
++    } else {
++        hasRuntimePermission(Manifest.permission.ACCESS_FINE_LOCATION)
++    }
++
+     fun startMesh() {
+         if (_isMeshActive.value) return
++        val bleAllowed = canUseBleTransport()
++        val wifiAllowed = canUseWifiDirectTransport()
++        if (!bleAllowed && !wifiAllowed) {
++            Log.w(TAG, "Mesh start skipped: neither BLE nor Wi-Fi Direct runtime permissions are granted")
++            return
++        }
+         _isMeshActive.value = true
+         MeshForegroundService.start(context)
+-        bleManager.startMesh()
+-        wifiManager.start()
+-        Log.d(TAG, "Jesr Mesh Network started for ID: $myJesrId")
++        if (bleAllowed) bleManager.startMesh()
++        if (wifiAllowed) wifiManager.start()
++        Log.d(TAG, "Jesr Mesh Network started for ID: $myJesrId (BLE=$bleAllowed, Wi-Fi Direct=$wifiAllowed)")
+     }
+ 
+     fun stopMesh() {
