@@ -1,0 +1,69 @@
+name: Inspect Jesr 3.5 source archives
+
+on:
+  push:
+    branches:
+      - merge-jesr-3-5
+    paths:
+      - ".github/workflows/inspect-jesr-archives.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download both official release archives
+        run: |
+          set -euo pipefail
+          mkdir -p bundle/yesterday bundle/today
+          curl -fL "https://github.com/OTAD88/-/releases/download/je/JISR-3.zip" -o /tmp/JISR-3.zip
+          curl -fL "https://github.com/OTAD88/-/releases/download/je/jesr.zip" -o /tmp/jesr.zip
+          echo "90e97e7a48ce44a82cd0bc439456225cb5c4e4c7b5e6ebf4e6a10f9eacb61b50  /tmp/JISR-3.zip" | sha256sum -c -
+          echo "47a7b90cf6457d806e4d452e7369a591dba41e702c253f5a5af5feaac950d4c2  /tmp/jesr.zip" | sha256sum -c -
+          unzip -q /tmp/JISR-3.zip -d bundle/yesterday
+          unzip -q /tmp/jesr.zip -d bundle/today
+      - name: Compare complete file inventories and hashes
+        run: |
+          python3 - <<'PY'
+          import os, hashlib
+          from pathlib import Path
+          roots = {"yesterday": Path("bundle/yesterday"), "today": Path("bundle/today")}
+          maps = {}
+          for label, root in roots.items():
+              d = {}
+              for p in root.rglob("*"):
+                  if p.is_file():
+                      rel = p.relative_to(root).as_posix()
+                      d[rel] = hashlib.sha256(p.read_bytes()).hexdigest()
+              maps[label] = d
+          a, b = maps["yesterday"], maps["today"]
+          same = sorted(k for k in a.keys() & b.keys() if a[k] == b[k])
+          changed = sorted(k for k in a.keys() & b.keys() if a[k] != b[k])
+          only_old = sorted(a.keys() - b.keys())
+          only_new = sorted(b.keys() - a.keys())
+          out = [
+              "JESR 3.5 ARCHIVE COMPARISON",
+              f"Yesterday files: {len(a)}",
+              f"Today files: {len(b)}",
+              f"Identical same-path files: {len(same)}",
+              f"Changed same-path files: {len(changed)}",
+              f"Only yesterday: {len(only_old)}",
+              f"Only today: {len(only_new)}",
+              "", "=== CHANGED ===", *changed,
+              "", "=== ONLY YESTERDAY ===", *only_old,
+              "", "=== ONLY TODAY ===", *only_new,
+              "", "=== IDENTICAL ===", *same,
+          ]
+          Path("bundle/COMPARISON.txt").write_text("\n".join(out), encoding="utf-8")
+          print("\n".join(out[:12]))
+          PY
+      - name: Upload source archives and comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-3.5-Merge-Sources
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 7
