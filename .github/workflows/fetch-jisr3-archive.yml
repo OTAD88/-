@@ -1,0 +1,27 @@
+name: Temporary JISR-3 archive extraction
+
+on:
+  push:
+    paths:
+      - ".github/workflows/fetch-jisr3-archive.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download previous JISR-3 source asset
+        run: |
+          curl -fL --retry 3 "https://github.com/OTAD88/-/releases/download/je/JISR-3.zip" -o JISR-3.zip
+          echo "90e97e7a48ce44a82cd0bc439456225cb5c4e4c7b5e6ebf4e6a10f9eacb61b50  JISR-3.zip" | sha256sum -c -
+      - name: Make archive available for source comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: JISR-3-source-archive
+          path: JISR-3.zip
+          if-no-files-found: error
+          retention-days: 2
