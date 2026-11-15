@@ -75,7 +75,8 @@ jobs:
           # CI uses the regular Maven artifacts instead.
           sed -i '/robolectric.dependency.dir/d; /robolectric.offline/d' app/build.gradle.kts
           npm install --global firebase-tools
-          firebase emulators:exec --project demo-no-project --only auth,firestore "gradle --no-daemon testDebugUnitTest --tests com.example.ExampleRobolectricTest --tests com.example.ExampleUnitTest --tests com.example.JesrMeshTest.testMeshPacketJsonSerialization --tests com.example.JesrMeshTest.testRoomDatabaseMessagePersistence --tests com.example.JesrMeshTest.testStoreAndForwardQueuePersistence --tests com.example.data.repository.ThemeStoreRepositoryRuleTest"
+          npm install --no-save firebase @firebase/rules-unit-testing
+          firebase emulators:exec --project demo-no-project --only firestore "node --test firestore.test.js && gradle --no-daemon testDebugUnitTest --tests com.example.ExampleRobolectricTest --tests com.example.ExampleUnitTest --tests com.example.JesrMeshTest.testMeshPacketJsonSerialization --tests com.example.JesrMeshTest.testRoomDatabaseMessagePersistence --tests com.example.JesrMeshTest.testStoreAndForwardQueuePersistence"
 
       - name: Build final debug APK
         working-directory: source
