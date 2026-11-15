@@ -1,0 +1,59 @@
+name: Build Jesr 3.5 APK
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-jesr-3-5.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platforms
+        run: |
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
+          yes | sdkmanager --licenses
+
+      - name: Download Jesr source archive
+        run: |
+          curl -fL "https://github.com/OTAD88/-/releases/download/je/jesr.zip" -o jesr.zip
+          mkdir source
+          unzip -q jesr.zip -d source
+
+      - name: Set application version to 3.5
+        working-directory: source
+        run: |
+          sed -i 's/versionCode = 2/versionCode = 35/' app/build.gradle.kts
+          sed -i 's/versionName = "1.2"/versionName = "3.5"/' app/build.gradle.kts
+          grep -nE 'versionCode|versionName|compileSdk' app/build.gradle.kts
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.3.1"
+
+      - name: Build debug APK
+        working-directory: source
+        run: gradle --no-daemon assembleDebug --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-3.5-APK
+          path: source/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
