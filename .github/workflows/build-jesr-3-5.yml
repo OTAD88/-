@@ -25,8 +25,8 @@ jobs:
 
       - name: Install Android platforms
         run: |
-          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
           yes | sdkmanager --licenses
+          sdkmanager "platforms;android-36" "platforms;android-36.1" "build-tools;36.0.0"
 
       - name: Download Jesr source archive
         run: |
