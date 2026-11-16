@@ -9,6 +9,7 @@ on:
       - ".merge/jesr-3.5-permissions.patch"
       - ".merge/jesr-3.5-permissions-api31.patch"
       - ".github/workflows/build-jesr-3-5-merged.yml"
+      - "JESR_3_5_GOOGLE_SECURITY_SETUP_AR.md"
   workflow_dispatch:
 
 permissions:
@@ -77,8 +78,6 @@ jobs:
         working-directory: source
         run: |
           set -euo pipefail
-          # The source project pins Robolectric to a developer-only Maven cache.
-          # CI uses the regular Maven artifacts instead.
           sed -i '/robolectric.dependency.dir/d; /robolectric.offline/d' app/build.gradle.kts
           npm install --global firebase-tools
           npm install --no-save firebase @firebase/rules-unit-testing
@@ -90,11 +89,11 @@ jobs:
           set -euo pipefail
           gradle --no-daemon lintDebug compileReleaseKotlin --stacktrace
 
-      - name: Build final debug APK
+      - name: Build CI debug APK
         working-directory: source
         run: gradle --no-daemon assembleDebug --stacktrace
 
-      - name: Verify APK metadata and signature
+      - name: Verify CI debug APK metadata and signature
         working-directory: source
         run: |
           set -euo pipefail
@@ -104,18 +103,75 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee /tmp/jesr-badging.txt
           grep -F "package: name='com.aistudio.jesr.mesh' versionCode='36' versionName='3.5'" /tmp/jesr-badging.txt
 
+      - name: Check release signing configuration
+        id: release-config
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          count=0
+          for value in "$ANDROID_KEYSTORE_BASE64" "$ANDROID_STORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD"; do
+            if [[ -n "$value" ]]; then count=$((count + 1)); fi
+          done
+          if [[ "$count" == "4" ]]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$count" == "0" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing secrets are not configured; production-signed APK is intentionally not generated."
+          else
+            echo "Partial release signing configuration detected; refusing to build an ambiguously signed release." >&2
+            exit 1
+          fi
+
+      - name: Build and verify production-signed Release APK
+        if: steps.release-config.outputs.ready == 'true'
+        working-directory: source
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/jesr-release.jks"
+          export KEYSTORE_PATH="$RUNNER_TEMP/jesr-release.jks"
+          export STORE_PASSWORD="$ANDROID_STORE_PASSWORD"
+          export KEY_ALIAS="$ANDROID_KEY_ALIAS"
+          export KEY_PASSWORD="$ANDROID_KEY_PASSWORD"
+          gradle --no-daemon assembleRelease --stacktrace
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | grep -F "package: name='com.aistudio.jesr.mesh' versionCode='36' versionName='3.5'"
+          keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$STORE_PASSWORD" -alias "$KEY_ALIAS" | grep -E 'SHA256:|Alias name:'
+          rm -f "$KEYSTORE_PATH"
+
       - name: Package merged project source
         run: |
           cd source
           zip -qr ../Jesr-3.5-Final-Source.zip . -x '.git/*' '.gradle/*' 'app/build/*' 'build/*' 'debug.keystore'
 
-      - name: Upload final APK, source and merge report
+      - name: Upload CI APK and merged source
         uses: actions/upload-artifact@v4
         with:
-          name: Jesr-3.5-FINAL
+          name: Jesr-3.5-CI-and-Source
           path: |
             source/app/build/outputs/apk/debug/app-debug.apk
             Jesr-3.5-Final-Source.zip
             source/MERGE_REVIEW_AR.md
+            JESR_3_5_GOOGLE_SECURITY_SETUP_AR.md
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload production-signed APK
+        if: steps.release-config.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jesr-3.5-RELEASE
+          path: source/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
